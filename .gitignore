@@ -1,0 +1,29 @@
+archive/
+# oldruns/
+# models/
+# topscores
+__pycache__
+target*
+q_net*
+testlog.txt
+slurm*
+better_agent_dqn.py
+q_net.pth
+losses.png
+*.pth
+*.png
+*.csv
+data/
+*data/
+notes.csv
+badrun*
+bestrun
+models
+oldruns
+pacmantest
+retrain
+secondbestrun
+topscores
+updatedparams
+makeplotstuff.py
+makeplots.ipynb
