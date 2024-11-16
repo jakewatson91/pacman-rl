@@ -24,7 +24,6 @@ def parse():
     args = parser.parse_args()
     return args
 
-
 def run(args, record_video=False):
     start_time = time.time()
     if args.train_dqn or args.train_dqn_again:

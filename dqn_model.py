@@ -5,8 +5,6 @@ import torch.nn.functional as F
 import numpy as np
 import torch
 
-
-
 class NoisyLinear(nn.Module):
     def __init__(self, in_features, out_features, std_init=0.4):
         super(NoisyLinear, self).__init__()
@@ -49,8 +47,6 @@ class NoisyLinear(nn.Module):
     def scale_noise(size):
         x = torch.randn(size)
         return x.sign().mul_(x.abs().sqrt_())
-
-
 
 class DQN(nn.Module):
     """Initialize a deep Q-learning network
@@ -104,7 +100,6 @@ class DQN(nn.Module):
 
         )
 
-
     def forward(self, x):
         # if isinstance(x
         x = self.features(x)
@@ -117,7 +112,6 @@ class DQN(nn.Module):
          
         return x
     
- 
     def act(self, state,epsilon):
         if np.random.rand() < epsilon:
             return np.random.randint(self.num_actions)
