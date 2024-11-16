@@ -39,9 +39,7 @@ def add_arguments(parser):
     #specify locations for saving
     parser.add_argument('--data_dir', type=str, default='data/', help='directory to save data')
     parser.add_argument('--model_name', type=str, default='model.pth', help='name of model')
-
-    
+  
     return parser
-
 
 # linear decay (epsiolon -epsilon_min) / epsilon step

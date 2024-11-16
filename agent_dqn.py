@@ -11,7 +11,6 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 
-
 from agent import Agent
 from dqn_model import DQN
 import matplotlib.pyplot as plt
@@ -24,11 +23,9 @@ import torch.nn.utils as nn_utils
 you can import any package and define any extra function as you need
 """
 
-
 torch.manual_seed(595)
 np.random.seed(595)
 random.seed(595)
-
 
 class Agent_DQN(Agent):
 
@@ -44,15 +41,8 @@ class Agent_DQN(Agent):
         """
 
         super(Agent_DQN,self).__init__(env)
-        ###########################
-        # YOUR IMPLEMENTATION HERE #
-
-
-
+  
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-        
 
         self.episodes = args.episodes
 
@@ -67,16 +57,13 @@ class Agent_DQN(Agent):
 
         self.epsilon_decay_steps = args.epsilon_decay_steps
 
-
-
         self.update_target_net_freq = args.update_target_net_freq
         self.max_buffer_size = args.max_buffer_size
         self.save_freq = args.save_freq
         self.write_freq = args.write_freq
         self.print_freq = args.print_freq
         self.buffer_start = args.buffer_start
-        
-        
+             
         self.prioritized_alpha = args.prioritized_alpha
 
         self.beta = args.prioritized_beta
@@ -84,7 +71,6 @@ class Agent_DQN(Agent):
 
         self.n_step = args.n_step
         self.n_step_buffer = deque(maxlen=self.n_step)
-
 
         #configure data directories
 
@@ -97,7 +83,6 @@ class Agent_DQN(Agent):
         self.priorities = deque(maxlen=self.max_buffer_size)
 
         #init model and target net
-
 
         self.q_net = DQN().to(self.device)
         self.target_net = DQN().to(self.device)
@@ -112,15 +97,7 @@ class Agent_DQN(Agent):
             self.target_net.load_state_dict(checkpoint['model_state_dict'])
 
 
-            self.epsilon = self.epsilon_min
-
-
-
-
-            
-
-
-            
+            self.epsilon = self.epsilon_min           
 
     def init_game_setting(self):
         """
@@ -128,10 +105,6 @@ class Agent_DQN(Agent):
         Put anything you want to initialize if necessary.
         If no parameters need to be initialized, you can leave it as blank.
         """
-        ###########################
-        # YOUR IMPLEMENTATION HERE #
-        
-        ###########################
         pass
     
     
@@ -161,7 +134,6 @@ class Agent_DQN(Agent):
 
                 self.greedy_steps += 1
 
-
         return action
     
     def push(self, state, action, reward, next_state, done):
@@ -189,15 +161,6 @@ class Agent_DQN(Agent):
             # Set priority for the new transition
             priority = max(self.priorities) if self.priorities else 1.0
             self.priorities.append(priority)
-
-
-            
-
-
-        
-
-       
-
     
     def get_n_step_info(self):
         """
@@ -216,21 +179,11 @@ class Agent_DQN(Agent):
         state, action = self.n_step_buffer[0][:2]
 
         return state, action, reward, next_state, done
-
-
-        
         
     def replay_buffer(self):
         """ You can add additional arguments as you need.
         Select batch from buffer.
         """
-        ###########################
-        # YOUR IMPLEMENTATION HERE #
-        
-        
-        
-        ###########################
-
 
         batch = random.sample(self.buffer, self.batch_size)
 
@@ -259,7 +212,6 @@ class Agent_DQN(Agent):
         weights = (len(self.buffer) * priorities) ** -self.beta
         weights /= weights.max()
 
-
         state, action, reward, next_state, done = zip(*batch)
 
         state = torch.tensor(np.array(state), dtype=torch.float32).to(self.device)
@@ -269,8 +221,6 @@ class Agent_DQN(Agent):
         done = torch.tensor(np.array(done), dtype=torch.float32).to(self.device)
 
         return state, action, reward, next_state, done, weights
-      
-
     
     def fill_buffer(self):
         state = self.env.reset()
@@ -284,7 +234,6 @@ class Agent_DQN(Agent):
             if done:
                 state = self.env.reset()
         print('Buffer filled')
-
 
     def train(self):
 
@@ -307,13 +256,11 @@ class Agent_DQN(Agent):
             # if episode>0 and episode % self.print_freq == 0:
             #     print(f'Episode: {episode}, Reward: {all_rewards[-1]},Avg Reward: {avg_rewards[-1]}')
 
-
             state = self.env.reset()
             done = False
             episode_reward = 0
 
             self.epsilon = self.update_epsilon(episode)
-
 
             epsilons.append(self.epsilon)    
             # run episode
@@ -324,21 +271,16 @@ class Agent_DQN(Agent):
                 state = next_state
                 episode_reward += reward
 
-
-
             self.train_batch()
             all_rewards.append(episode_reward)
             avg_rewards.append(np.mean(all_rewards[-30:]))
-
-   
+  
             if episode % self.update_target_net_freq == 0:
                 self.target_net.load_state_dict(self.q_net.state_dict())
-
 
             if episode % self.write_freq == 0:
                 #plot avg rewards
                 self.makePlots(all_rewards, avg_rewards, self.losses,epsilons)
-
 
             if episode % self.save_freq == 0:
 
@@ -347,8 +289,6 @@ class Agent_DQN(Agent):
                 torch.save({
                     'model_state_dict': self.q_net.state_dict(),
                 }, self.data_dir + self.model_name)
-
-                
 
                 print('Model saved')
            
