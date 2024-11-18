@@ -18,4 +18,4 @@ source $(conda info --base)/etc/profile.d/conda.sh
 
 conda activate testenv
 
-python main.py --test_dqn --data_dir 'updatedparams/' --model_name "expandedmodel.pth" 
+python main.py --test_dqn --data_dir 'pacmantest/' --model_name "halfrainbow.pth" 

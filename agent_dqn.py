@@ -99,6 +99,14 @@ class Agent_DQN(Agent):
 
             self.epsilon = self.epsilon_min           
 
+
+
+
+            
+
+
+            
+
     def init_game_setting(self):
         """
         Testing function will call this function at the begining of new game

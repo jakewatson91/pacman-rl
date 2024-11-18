@@ -119,3 +119,5 @@ class DQN(nn.Module):
         q_value = self.forward(state)
         return torch.argmax(q_value).item()
     
+
+

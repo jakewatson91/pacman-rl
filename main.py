@@ -30,7 +30,10 @@ def run(args, record_video=False):
         env_name = args.env_name or 'ALE/Pacman-v5'
         env = Environment(env_name, args, atari_wrapper=True, test=False)
         from agent_dqn import Agent_DQN
+        # from agent_a3c import Agent_A3C
+
         agent = Agent_DQN(env, args)
+        # agent = Agent_A3C(env, args)
         agent.train()
 
     if args.test_dqn:

@@ -40,6 +40,17 @@ def add_arguments(parser):
     parser.add_argument('--data_dir', type=str, default='data/', help='directory to save data')
     parser.add_argument('--model_name', type=str, default='model.pth', help='name of model')
   
+
+
+    #A3C hyperparameters
+
+    parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
+    parser.add_argument('--max_steps', type=int, default=1000000, help='maximum number of steps')
+    parser.add_argument('--feature_size', type=int, default=512, help='feature size')
+    
+
+
+
     return parser
 
 # linear decay (epsiolon -epsilon_min) / epsilon step
