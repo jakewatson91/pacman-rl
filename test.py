@@ -9,7 +9,7 @@ import argparse
 import numpy as np
 from environment import Environment
 import time
-from gymnasium.wrappers.monitoring import video_recorder
+from gymnasium.wrappers import RecordVideo
 from tqdm import tqdm
 
 seed = 11037
@@ -20,7 +20,7 @@ def test(agent, env, total_episodes=100, record_video=False):
 
     vid = None  # Initialize vid to None to ensure it's accessible outside the if block
     if record_video:
-        vid = video_recorder.VideoRecorder(env=env.env, path="test_vid.mp4")
+        vid = RecordVideo(env=env.env, video_folder="./videos")
     start_time = time.time()
     
     
@@ -38,8 +38,8 @@ def test(agent, env, total_episodes=100, record_video=False):
                 state, reward, terminated, truncated, info = env.step(action)
                 episode_reward += reward
 
-                if record_video:
-                    vid.capture_frame()
+                # if record_video:
+                #     vid.capture_frame()
 
             if truncated:
                 break

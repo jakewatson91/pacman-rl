@@ -27,7 +27,7 @@ def parse():
 def run(args, record_video=False):
     start_time = time.time()
     if args.train_dqn or args.train_dqn_again:
-        env_name = args.env_name or 'ALE/Pacman-v5'
+        env_name = args.env_name or 'ALE/MsPacman-v5'
         env = Environment(env_name, args, atari_wrapper=True, test=False)
         from agent_dqn import Agent_DQN
         # from agent_a3c import Agent_A3C
@@ -38,10 +38,10 @@ def run(args, record_video=False):
 
     if args.test_dqn:
         render_mode_value = "rgb_array" if record_video else None
-        env = Environment('ALE/Pacman-v5', args, atari_wrapper=True, test=True, render_mode=render_mode_value)
+        env = Environment('ALE/MsPacman-v5', args, atari_wrapper=True, test=True, render_mode=render_mode_value)
         from agent_dqn import Agent_DQN
         agent = Agent_DQN(env, args)
-        test(agent, env, total_episodes=100, record_video=record_video)
+        test(agent, env, total_episodes=5, record_video=record_video)
     print('running time:',time.time()-start_time)
 
 if __name__ == '__main__':

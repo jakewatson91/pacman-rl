@@ -13,7 +13,7 @@ def add_arguments(parser):
     parser.add_argument('--batch_size', type=int, default=32, help='batch size for training')
     parser.add_argument('--buffer_start', type=int, default=5000, help='buffer start size')
     parser.add_argument('--learning_rate', type=float, default=1.5e-4, help='learning rate for training')
-    parser.add_argument('--max_buffer_size', type=int, default=10000, help='maximum buffer size')
+    parser.add_argument('--max_buffer_size', type=int, default=100000, help='maximum buffer size')
 
     # network hyperparameters
     parser.add_argument('--gamma', type=float, default=0.99, help='discount factor')
@@ -27,29 +27,31 @@ def add_arguments(parser):
     parser.add_argument('--write_freq', type=int, default=100, help='write frequency')
     parser.add_argument('--print_freq', type=int, default=1000, help='print frequency')
 
-
     #prioritized queue hyperparameters
-    parser.add_argument('--prioritized_alpha', type=float, default=0.6, help='alpha for prioritized experience replay')
+    parser.add_argument('--prioritized_alpha', type=float, default=0.5, help='alpha for prioritized experience replay')
     parser.add_argument('--prioritized_beta', type=float, default=0.4, help='beta for prioritized experience replay')
-    parser.add_argument('--prioritized_beta_increment', type=float, default=0.001, help='beta increment for prioritized experience replay')
+    parser.add_argument('--prioritized_beta_increment', type=float, default=0.0001, help='beta increment for prioritized experience replay')
 
     #multi-step learning hyperparameters
     parser.add_argument('--n_step', type=int, default=3, help='n-step learning')
+
+    #noisy hyperparameters
+    parser.add_argument("--noisy-std", type=float, default=0.1)
+
+    #distributional q-learning hyperparameters
+    parser.add_argument("--num_atoms", type=int, default=51)
+    parser.add_argument("--v_min", type=float, default=-10.0)
+    parser.add_argument("--v_max", type=float, default=10.0)
 
     #specify locations for saving
     parser.add_argument('--data_dir', type=str, default='data/', help='directory to save data')
     parser.add_argument('--model_name', type=str, default='model.pth', help='name of model')
   
-
-
     #A3C hyperparameters
 
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
     parser.add_argument('--max_steps', type=int, default=1000000, help='maximum number of steps')
     parser.add_argument('--feature_size', type=int, default=512, help='feature size')
-    
-
-
 
     return parser
 
