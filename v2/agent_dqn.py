@@ -185,10 +185,14 @@ class Agent_DQN(Agent):
         # assert actions.shape[0] == self.batch_size, "Invalid batch size for actions"
         # assert (actions >= 0).all() and (actions < self.q_net(states).shape[1]).all(), "Invalid action indices"
 
-        qs = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-        next_qs = self.target_net(next_states).max(dim=1)[0]
+        #double implementation
+        qs = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1) #compute states and next states on main network
+        next_qs = self.q_net(next_states)
         
-        targets = rewards + (1 - dones) * self.gamma * next_qs
+        best_actions = torch.argmax(next_qs, dim=1) #get action indices for best state transition
+
+        target_qs = self.target_net(next_states).gather(1, best_actions.unsqueeze(1)).squeeze(1) #compute targets using action indices from main network
+        targets = rewards + (1 - dones) * self.gamma * target_qs
 
         loss = self.loss(qs, targets.detach()).mean()
 
