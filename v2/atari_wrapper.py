@@ -141,7 +141,7 @@ class ClipRewardEnv(gym.RewardWrapper):
 
     def reward(self, reward):
         """Bin reward to {+1, 0, -1} by its sign."""
-        return np.sign(reward)
+        return np.log(1 + reward) # clipping rewards while retaining magnitude
 
 
 @PublicAPI
