@@ -15,7 +15,7 @@ class DQN(nn.Module):
     This is just a hint. You can build your own structure.
     """
 
-    def __init__(self, in_channels=4, num_actions=9):
+    def __init__(self, args, in_channels=4, num_actions=5):
         """
         Parameters:
         -----------
@@ -28,6 +28,9 @@ class DQN(nn.Module):
         member variables.
         """
         super(DQN, self).__init__()
+
+        self.args = args
+
         self.conv1 = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=8, stride=4),
             nn.ReLU()
@@ -43,6 +46,19 @@ class DQN(nn.Module):
         self.fc1 = nn.Linear(64 * 7 * 7, 512)
         self.fc2 = nn.Linear(512, num_actions)
 
+        #dueling
+        self.fc_value = nn.Sequential(
+            nn.Linear(64 * 7 * 7, 512),
+            nn.ReLU(),
+            nn.Linear(512, 1),
+        )
+
+        self.fc_advantage = nn.Sequential(
+            nn.Linear(64 * 7 * 7, 512),
+            nn.ReLU(),
+            nn.Linear(512, num_actions),
+        )
+
     def forward(self, x):
         """
         In the forward function we accept a Tensor of input data and we must return
@@ -53,6 +69,14 @@ class DQN(nn.Module):
         x = self.conv2(x)
         x = self.conv3(x)
         x = x.flatten(1)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
+
+        if self.args.no_dueling:
+            x = self.fc1(x)
+            x = self.fc2(x)
+            return x
+        
+        value = self.fc_value(x)
+        advantage = self.fc_advantage(x)
+
+        x = value + (advantage - advantage.mean(dim=1, keepdim=True))
         return x
