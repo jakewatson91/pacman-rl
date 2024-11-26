@@ -73,12 +73,16 @@ class ReplayBuffer:
         if self.prioritized:
             total = self.priorities.sum()
             probabilities = self.priorities[:self.size] / total
+            # print("Probabilities: ", probabilities[:100])
 
             indices = np.random.choice(self.size, batch_size, p=probabilities)
+            # print("Indices: ", indices)
             weights = (self.size * probabilities[indices]) ** (-self.beta)
             weights /= weights.max()
+            # print("Weights: ", weights[:10])
 
             self.beta = min(1.0, self.beta + self.beta_increment)
+            # print("Beta: ", self.beta)
 
             weights = torch.from_numpy(weights).float().to(self.device)
 
@@ -99,6 +103,7 @@ class ReplayBuffer:
         td_errors = td_errors.detach().cpu().numpy()
         self.priorities[indices] = (np.abs(td_errors) + 1e-5) ** self.alpha
         self.max_priority = max(self.max_priority, self.priorities[indices].max())
+        # print("Prios: ", self.priorities[:100])
 
 class Agent_DQN(Agent):
     def __init__(self, env, args):
