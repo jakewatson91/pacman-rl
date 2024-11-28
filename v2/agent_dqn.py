@@ -5,6 +5,7 @@ import numpy as np
 import os
 import sys
 from tqdm import tqdm
+from collections import deque
 
 import torch
 import torch.nn.functional as F
@@ -104,6 +105,26 @@ class ReplayBuffer:
         self.priorities[indices] = (np.abs(td_errors) + 1e-5) ** self.alpha
         self.max_priority = max(self.max_priority, self.priorities[indices].max())
         # print("Prios: ", self.priorities[:100])
+
+class NStep():
+    def __init__(self, n, step, gamma):
+        self.n = n
+        self.step = step
+        self.gamma = gamma
+        self.buffer = deque(maxlen=self.n)
+    
+    def push(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
+        return
+    
+    def compute_return(self, buffer):
+        if self.step % 3 == 0:
+            R = 0
+            for i, (_, _, reward, _, _) in enumerate(buffer):
+                R += reward * self.gamma ** i
+            
+            
+
 
 class Agent_DQN(Agent):
     def __init__(self, env, args):
