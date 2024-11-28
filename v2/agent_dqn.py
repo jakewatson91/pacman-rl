@@ -55,7 +55,8 @@ class ReplayBuffer:
             self.priorities = np.zeros((max_size,), dtype=np.float32)
             self.max_priority = 1.0
 
-    def add(self, state, action, reward, next_state, done):
+    def add(self, transition):
+        state, action, reward, next_state, done = transition
         idx = self.ptr
 
         self.states[idx] = state.astype(np.float32)  # Ensure state is float32
@@ -107,24 +108,28 @@ class ReplayBuffer:
         # print("Prios: ", self.priorities[:100])
 
 class NStep():
-    def __init__(self, n, step, gamma):
+    def __init__(self, n, gamma):
         self.n = n
-        self.step = step
         self.gamma = gamma
         self.buffer = deque(maxlen=self.n)
     
-    def push(self, state, action, reward, next_state, done):
+    def add(self, transition):
+        state, action, reward, next_state, done = transition
         self.buffer.append((state, action, reward, next_state, done))
-        return
-    
-    def compute_return(self, buffer):
-        if self.step % 3 == 0:
-            R = 0
-            for i, (_, _, reward, _, _) in enumerate(buffer):
-                R += reward * self.gamma ** i
-            
-            
+        processed_transitions = []
 
+        while len(self.buffer) >= self.n or (done and self.buffer):
+            processed_transitions.append(self.compute_return())
+        
+        return processed_transitions
+    
+    def compute_return(self):
+        R = 0
+        for i, (_, _, reward, _, _) in enumerate(self.buffer):
+            R += reward * self.gamma ** i 
+        s, a, _, ns, d = self.buffer[i] 
+        self.buffer.popleft()
+        return s, a, R, ns, d 
 
 class Agent_DQN(Agent):
     def __init__(self, env, args):
@@ -181,6 +186,11 @@ class Agent_DQN(Agent):
             beta_increment=args.prioritized_beta_increment
         )
 
+        #N-Step buffer
+        self.no_nstep = args.no_nstep
+        self.n = args.n_step
+        self.n_step = NStep(self.n, self.gamma)
+
         # Initialize model and target net
         self.q_net = DQN(args).to(self.device)
         self.target_net = DQN(args).to(self.device)
@@ -220,9 +230,14 @@ class Agent_DQN(Agent):
 
         return action
 
-    def push(self, state, action, reward, next_state, done):
+    def push(self, transition):
         """Push new data to buffer."""
-        self.buffer.add(state, action, reward, next_state, done)
+        if self.no_nstep:
+            self.buffer.add(transition)
+            return
+        transitions = self.n_step.add(transition) #add and process observations with n step
+        for transition in transitions:
+            self.buffer.add(transition) #add processed observations to replay
 
     def fill_buffer(self):
         state = self.env.reset()
@@ -230,7 +245,8 @@ class Agent_DQN(Agent):
         while self.buffer.size < self.buffer_start:
             action = self.make_action(state, test=False)
             next_state, reward, done, _, _ = self.env.step(action)
-            self.push(state, action, reward, next_state, done)
+            transition = state, action, reward, next_state, done
+            self.push(transition)
             state = next_state
 
             pbar.update(1)
@@ -288,14 +304,15 @@ class Agent_DQN(Agent):
             while not done:
                 action = self.make_action(state, test=False)
                 next_state, reward, done, truncated, _ = self.env.step(action)
-                self.push(state, action, reward, next_state, done)
-
+                transition = state, action, reward, next_state, done
+                self.push(transition)
+                
                 total_reward += reward
                 self.steps += 1
                 steps += 1
 
-                if self.steps % 4 == 0:
-                    loss = self.update()
+                loss = self.update()
+                if loss:
                     episode_loss += loss
 
                 if self.steps > 10000 and self.epsilon > self.epsilon_min:

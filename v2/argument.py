@@ -55,7 +55,9 @@ def add_arguments(parser):
 
     #models
     parser.add_argument('--no_dueling', action='store_true', help='use dueling architecture or not')
-    parser.add_argument('--no_prio_replay', action='store_true', help='use dueling architecture or not')
+    parser.add_argument('--no_prio_replay', action='store_true', help='use prio replay buffer or not')
+    parser.add_argument('--no_nstep', action='store_true', help='use n-step architecture or not')
+    parser.add_argument('--no_double', action='store_true', help='use double architecture or not')
     
     return parser
 
