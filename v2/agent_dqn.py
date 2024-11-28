@@ -160,8 +160,8 @@ class Agent_DQN(Agent):
         self.epsilon_max = args.epsilon
         self.epsilon_decay_steps = args.epsilon_decay_steps
 
-        self.rewards = []
-        self.losses = []
+        #double
+        self.no_double = args.no_double
 
         # Configure data directories and logging
         self.data_dir = args.data_dir
@@ -169,6 +169,8 @@ class Agent_DQN(Agent):
         self.save_freq = args.save_freq
         self.write_freq = args.write_freq
         self.print_freq = args.print_freq
+        self.rewards = []
+        self.losses = []
 
         # Initialize buffer
         self.max_buffer_size = args.max_buffer_size
@@ -259,10 +261,14 @@ class Agent_DQN(Agent):
         states, actions, rewards, next_states, dones, indices, weights = self.buffer.sample(self.batch_size)
 
         qs = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-        next_qs = self.q_net(next_states)
 
-        best_actions = torch.argmax(next_qs, dim=1)
-        target_qs = self.target_net(next_states).gather(1, best_actions.unsqueeze(1)).squeeze(1)
+        if self.no_double:  
+            target_qs = self.target_net(next_states).max(dim=1)[0]
+        else:
+            next_qs = self.q_net(next_states)
+            best_actions = torch.argmax(next_qs, dim=1)
+            target_qs = self.target_net(next_states).gather(1, best_actions.unsqueeze(1)).squeeze(1)
+        
         targets = rewards + (1 - dones) * self.gamma * target_qs
 
         td_errors = targets.detach() - qs
