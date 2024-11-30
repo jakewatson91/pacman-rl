@@ -41,7 +41,7 @@ def add_arguments(parser):
     #distributional q-learning hyperparameters
     parser.add_argument("--num_atoms", type=int, default=51)
     parser.add_argument("--v_min", type=float, default=0.0)
-    parser.add_argument("--v_max", type=float, default=10) #estimated max rewards per level
+    parser.add_argument("--v_max", type=float, default=10)
 
     #specify locations for saving
     parser.add_argument('--data_dir', type=str, default='data/', help='directory to save data')

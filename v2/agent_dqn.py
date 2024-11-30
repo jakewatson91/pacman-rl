@@ -123,6 +123,48 @@ class NStep():
         self.buffer.popleft()
         return s, a, R, ns, d 
 
+class Distributional():
+    def __init__(self, args):
+        self.num_atoms = args.num_atoms
+        self.v_min = args.v_min
+        self.v_max = args.v_max
+        self.delta = (self.v_max - self.v_min) / (self.num_atoms - 1)
+        self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
+
+    def project_distribution(self, reward, next_probabilities, done): #for distributional
+        batch_size = reward.size(0)
+        projected_distribution = torch.zeros((batch_size, self.num_atoms), device=self.device)
+
+        for j in range(self.num_atoms):
+            # Bellman update
+            tz_j = reward + (1 - done) * (self.gamma * (self.v_min + j * self.delta_z))
+            tz_j = tz_j.clamp(self.v_min, self.v_max)
+
+            # Calculate projection
+            b = (tz_j - self.v_min) / self.delta_z
+            l, u = b.floor().long(), b.ceil().long()
+
+            # Initialize the projected distribution with zeros
+            projected_distribution = torch.zeros_like(next_probabilities, device=next_probabilities.device)
+
+            # Compute the contributions for lower and upper bins
+            lower_contrib = next_probabilities * (u - b).unsqueeze(1)
+            upper_contrib = next_probabilities * (b - l).unsqueeze(1)
+
+            # Expand l and u to match the dimensions of the contributions
+            l_expanded = l.unsqueeze(1).expand(-1, self.num_atoms)
+            u_expanded = u.unsqueeze(1).expand(-1, self.num_atoms)
+
+            # print("projected_distribution shape:", projected_distribution.shape)  # Expected: [batch_size, num_atoms]
+            # print("l_expanded shape:", l_expanded.shape)  # Expected: [batch_size, num_atoms]
+            # print("lower_contrib shape:", lower_contrib.shape)  # Expected: [batch_size, num_atoms]
+
+            # Scatter the contributions to their respective bins
+            projected_distribution.scatter_add_(1, l_expanded, lower_contrib)
+            projected_distribution.scatter_add_(1, u_expanded, upper_contrib)
+
+        return projected_distribution
+
 class Agent_DQN(Agent):
     def __init__(self, env, args):
         """
@@ -136,7 +178,7 @@ class Agent_DQN(Agent):
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.loss_fn = torch.nn.HuberLoss()
+        self.loss_fn = torch.nn.HuberLoss() if self.no.distr else F.kl_div(reduction='batchmean')
 
         self.steps = 0
 
@@ -184,6 +226,9 @@ class Agent_DQN(Agent):
         self.no_nstep = args.no_nstep
         self.n = args.n_step
         self.n_step = NStep(self.n, self.gamma)
+
+        #distributional
+        self.distr = Distributional(self, args)
 
         # Initialize model and target net
         self.q_net = DQN(args).to(self.device)
@@ -252,14 +297,37 @@ class Agent_DQN(Agent):
     def update(self):
         states, actions, rewards, next_states, dones, indices, weights = self.buffer.sample(self.batch_size)
 
-        qs = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
+        if self.no_distr:
+            qs = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
+            if self.no_double:  
+                target_qs = self.target_net(next_states).max(dim=1)[0]
+            else:
+                next_qs = self.q_net(next_states)
+                best_actions = torch.argmax(next_qs, dim=1)
+                target_qs = self.target_net(next_states).gather(1, best_actions.unsqueeze(1)).squeeze(1)
+        
+        # Compute predicted probabilities for current states
+        probabilities = self.q_net(states).to(self.device)  # [batch_size, num_actions, num_bins]
+        batch_indices = torch.arange(self.batch_size, device=self.device)
+        log_probabilities = torch.log(probabilities[batch_indices, actions])  # [batch_size, num_bins]
 
-        if self.no_double:  
-            target_qs = self.target_net(next_states).max(dim=1)[0]
-        else:
-            next_qs = self.q_net(next_states)
-            best_actions = torch.argmax(next_qs, dim=1)
-            target_qs = self.target_net(next_states).gather(1, best_actions.unsqueeze(1)).squeeze(1)
+        if self.no_double:
+            # Compute target probabilities using the target network
+            target_probabilities = self.target_net(next_states)  # [batch_size, num_actions, num_bins]
+            next_q_values = torch.sum(target_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
+            best_actions = torch.argmax(next_q_values, dim=1)  # [batch_size]
+            target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
+        else: # Main network selects the best actions
+            main_probabilities = self.q_net(next_states).to(self.device)  # [batch_size, num_actions, num_bins]
+            main_q_values = torch.sum(main_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
+            best_actions = torch.argmax(main_q_values, dim=1)  # [batch_size]
+
+            # Target network evaluates the selected actions
+            target_probabilities = self.target_net(next_states)  # [batch_size, num_actions, num_bins]
+            target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
+
+        # Project target distribution
+        target_distribution = self.project_distribution(rewards, target_probabilities, dones)
         
         targets = rewards + (1 - dones) * self.gamma * target_qs
 
@@ -268,10 +336,13 @@ class Agent_DQN(Agent):
         if not self.no_prio_replay:
             self.buffer.update_priorities(indices, td_errors)
 
-        if weights is not None: #prio replay
-            loss = (weights * self.loss_fn(qs, targets.detach())).mean()
+        if self.no_distr:
+            if weights is not None: #prio replay
+                loss = (weights * self.loss_fn(qs, targets.detach())).mean()
+            else:
+                loss = self.loss_fn(qs, targets.detach())
         else:
-            loss = self.loss_fn(qs, targets.detach())
+            loss = self.loss_fn(log_probabilities, target_distribution)
 
         self.optimizer.zero_grad()
         loss.backward()
