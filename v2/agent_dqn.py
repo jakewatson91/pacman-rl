@@ -112,22 +112,14 @@ class NStep():
         self.n = n
         self.gamma = gamma
         self.buffer = deque(maxlen=self.n)
-    
-    def add(self, transition):
-        state, action, reward, next_state, done = transition
-        self.buffer.append((state, action, reward, next_state, done))
-        processed_transitions = []
 
-        while len(self.buffer) >= self.n or (done and self.buffer):
-            processed_transitions.append(self.compute_return())
-        
-        return processed_transitions
-    
-    def compute_return(self):
+    def compute_return(self, done):
+        if len(self.buffer) < self.n and not done:
+            return None
         R = 0
         for i, (_, _, reward, _, _) in enumerate(self.buffer):
             R += reward * self.gamma ** i 
-        s, a, _, ns, d = self.buffer[i] 
+        s, a, _, ns, d = self.buffer[0] 
         self.buffer.popleft()
         return s, a, R, ns, d 
 
@@ -232,25 +224,25 @@ class Agent_DQN(Agent):
 
         return action
 
-    def push(self, transition):
+    def push(self, state, action, reward, next_state, done):
         """Push new data to buffer."""
-        if self.no_nstep:
+        transition = state, action, reward, next_state, done
+        if not self.no_nstep:
+            self.n_step.buffer.append(transition)
+            processed_transition = self.n_step.compute_return(done) #return for oldest transition in buffer
+            if processed_transition: #if n-step buffer is filled
+                self.buffer.add(transition)
+        else:
             self.buffer.add(transition)
-            return
-        transitions = self.n_step.add(transition) #add and process observations with n step
-        for transition in transitions:
-            self.buffer.add(transition) #add processed observations to replay
-
+    
     def fill_buffer(self):
         state = self.env.reset()
         pbar = tqdm(total=self.buffer_start, desc="Filling Buffer", unit="steps")
         while self.buffer.size < self.buffer_start:
             action = self.make_action(state, test=False)
             next_state, reward, done, _, _ = self.env.step(action)
-            transition = state, action, reward, next_state, done
-            self.push(transition)
+            self.push(state, action, reward, next_state, done)
             state = next_state
-
             pbar.update(1)
             if done:
                 state = self.env.reset()
@@ -276,7 +268,7 @@ class Agent_DQN(Agent):
         if not self.no_prio_replay:
             self.buffer.update_priorities(indices, td_errors)
 
-        if weights is not None:
+        if weights is not None: #prio replay
             loss = (weights * self.loss_fn(qs, targets.detach())).mean()
         else:
             loss = self.loss_fn(qs, targets.detach())
@@ -286,7 +278,7 @@ class Agent_DQN(Agent):
         nn_utils.clip_grad_norm_(self.q_net.parameters(), 1)
         self.optimizer.step()
 
-        return loss.item()
+        return loss.item(), td_errors
 
     def train(self):
         """
@@ -294,7 +286,8 @@ class Agent_DQN(Agent):
         """
         all_rewards = []
         avg_rewards = []
-        self.losses = []
+        losses = []
+        avg_losses = []
         epsilons = [self.epsilon]
 
         self.fill_buffer()
@@ -310,14 +303,13 @@ class Agent_DQN(Agent):
             while not done:
                 action = self.make_action(state, test=False)
                 next_state, reward, done, truncated, _ = self.env.step(action)
-                transition = state, action, reward, next_state, done
-                self.push(transition)
-                
+                self.push(state, action, reward, next_state, done)
+
                 total_reward += reward
                 self.steps += 1
                 steps += 1
 
-                loss = self.update()
+                loss, td_errors = self.update()
                 if loss:
                     episode_loss += loss
 
@@ -328,19 +320,27 @@ class Agent_DQN(Agent):
                     self.target_net.load_state_dict(self.q_net.state_dict())
 
                 state = next_state
+            
+            while len(self.n_step.buffer) > 0: #handling remaining transitions in n-step buffer after done
+                transition = self.n_step.compute_return(done)
+                if transition:
+                    self.buffer.add(transition)
 
             all_rewards.append(total_reward)
             avg_rewards.append(np.mean(all_rewards[-30:]))
-            self.losses.append(episode_loss)
+            losses.append(episode_loss)
+            avg_losses.append(np.mean(losses[-30:]))
             epsilons.append(self.epsilon)
 
             # Logging and saving
             if episode and episode % self.write_freq == 0:
-                self.makePlots(all_rewards, avg_rewards, self.losses, epsilons)
+                self.makePlots(all_rewards, avg_rewards, losses, epsilons)
                 logger.info(f"Episode {episode+1}: Loss = {episode_loss}")
+                logger.info(f"Episode {episode+1}: Avg Loss: {avg_losses[-1]}")
                 logger.info(f"Episode {episode+1}: Avg Rewards = {avg_rewards[-1]}")
                 logger.info(f"Episode {episode+1}: Epsilon = {self.epsilon}")
                 logger.info(f"Episode {episode+1}: Steps this episode = {steps}")
+                logger.debug(f"Last Batch TD Errors: {td_errors.mean()}")
 
                 torch.save({
                     'model_state_dict': self.q_net.state_dict(),
