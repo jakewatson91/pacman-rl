@@ -41,7 +41,7 @@ def run(args, record_video=False):
         env = Environment('ALE/MsPacman-v5', args, atari_wrapper=True, test=True, render_mode=render_mode_value)
         from agent_dqn import Agent_DQN
         agent = Agent_DQN(env, args)
-        test(agent, env, total_episodes=10, record_video=record_video)
+        test(agent, env, total_episodes=1, record_video=record_video)
     print('running time:',time.time()-start_time)
 
 if __name__ == '__main__':

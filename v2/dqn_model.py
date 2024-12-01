@@ -92,6 +92,7 @@ class DQN(nn.Module):
         if self.args.no_noisy:
             #standard
             self.fc1 = nn.Linear(64 * 7 * 7, 512)
+            if self.args.no_distr
             self.fc2 = nn.Linear(512, num_actions)
 
             #dueling

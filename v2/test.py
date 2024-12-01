@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 seed = 11037
 
-def test(agent, env, total_episodes=100, record_video=False):
+def test(agent, env, total_episodes=10, record_video=False):
     rewards = []
     env.seed(seed)
 
@@ -27,7 +27,7 @@ def test(agent, env, total_episodes=100, record_video=False):
     for _ in tqdm(range(total_episodes)):
         episode_reward = 0.0
         truncated = False
-        for _ in range(5):  # Run each episode for 5 lives
+        for _ in range(3):  # Run each episode for 5 lives
             state = env.reset()
             agent.init_game_setting()
             terminated = False

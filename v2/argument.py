@@ -58,7 +58,8 @@ def add_arguments(parser):
     parser.add_argument('--no_prio_replay', action='store_true', help='use prio replay buffer or not')
     parser.add_argument('--no_nstep', action='store_true', help='use n-step architecture or not')
     parser.add_argument('--no_double', action='store_true', help='use double architecture or not')
-    parser.add_argument('--no_noisy', action='store_true', help='use double architecture or not')
+    parser.add_argument('--no_noisy', action='store_true', help='use noisy architecture or not')
+    parser.add_argument('--no_distr', action='store_true', help='use distributional architecture or not')
    
     return parser
 

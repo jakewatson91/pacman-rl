@@ -228,6 +228,7 @@ class Agent_DQN(Agent):
         self.n_step = NStep(self.n, self.gamma)
 
         #distributional
+        self.no_distr = args.no_distr
         self.distr = Distributional(self, args)
 
         # Initialize model and target net
@@ -296,7 +297,7 @@ class Agent_DQN(Agent):
 
     def update(self):
         states, actions, rewards, next_states, dones, indices, weights = self.buffer.sample(self.batch_size)
-
+        #no distributional
         if self.no_distr:
             qs = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
             if self.no_double:  
@@ -305,44 +306,43 @@ class Agent_DQN(Agent):
                 next_qs = self.q_net(next_states)
                 best_actions = torch.argmax(next_qs, dim=1)
                 target_qs = self.target_net(next_states).gather(1, best_actions.unsqueeze(1)).squeeze(1)
-        
-        # Compute predicted probabilities for current states
-        probabilities = self.q_net(states).to(self.device)  # [batch_size, num_actions, num_bins]
-        batch_indices = torch.arange(self.batch_size, device=self.device)
-        log_probabilities = torch.log(probabilities[batch_indices, actions])  # [batch_size, num_bins]
+            
+            targets = rewards + (1 - dones) * self.gamma * target_qs
+            td_errors = targets.detach() - qs
 
-        if self.no_double:
-            # Compute target probabilities using the target network
-            target_probabilities = self.target_net(next_states)  # [batch_size, num_actions, num_bins]
-            next_q_values = torch.sum(target_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
-            best_actions = torch.argmax(next_q_values, dim=1)  # [batch_size]
-            target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
-        else: # Main network selects the best actions
-            main_probabilities = self.q_net(next_states).to(self.device)  # [batch_size, num_actions, num_bins]
-            main_q_values = torch.sum(main_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
-            best_actions = torch.argmax(main_q_values, dim=1)  # [batch_size]
-
-            # Target network evaluates the selected actions
-            target_probabilities = self.target_net(next_states)  # [batch_size, num_actions, num_bins]
-            target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
-
-        # Project target distribution
-        target_distribution = self.project_distribution(rewards, target_probabilities, dones)
-        
-        targets = rewards + (1 - dones) * self.gamma * target_qs
-
-        td_errors = targets.detach() - qs
-
-        if not self.no_prio_replay:
-            self.buffer.update_priorities(indices, td_errors)
-
-        if self.no_distr:
             if weights is not None: #prio replay
                 loss = (weights * self.loss_fn(qs, targets.detach())).mean()
             else:
                 loss = self.loss_fn(qs, targets.detach())
-        else:
+    
+        #distributional
+        else: # Compute predicted probabilities for current states
+            probabilities = self.q_net(states).to(self.device)  # [batch_size, num_actions, num_bins]
+            batch_indices = torch.arange(self.batch_size, device=self.device)
+            log_probabilities = torch.log(probabilities[batch_indices, actions])  # [batch_size, num_bins]
+
+            if self.no_double:
+                # Compute target probabilities using the target network
+                target_probabilities = self.target_net(next_states)  # [batch_size, num_actions, num_bins]
+                next_q_values = torch.sum(target_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
+                best_actions = torch.argmax(next_q_values, dim=1)  # [batch_size]
+                target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
+            else: # Main network selects the best actions
+                main_probabilities = self.q_net(next_states).to(self.device)  # [batch_size, num_actions, num_bins]
+                main_q_values = torch.sum(main_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
+                best_actions = torch.argmax(main_q_values, dim=1)  # [batch_size]
+
+                # Target network evaluates the selected actions
+                target_probabilities = self.target_net(next_states)  # [batch_size, num_actions, num_bins]
+                target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
+
+            # Project target distribution
+            target_distribution = self.project_distribution(rewards, target_probabilities, dones)
             loss = self.loss_fn(log_probabilities, target_distribution)
+            td_errors = None #set to none for return since there are no td_errors in this method
+
+        if not self.no_prio_replay:
+            self.buffer.update_priorities(indices, td_errors)
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -411,7 +411,8 @@ class Agent_DQN(Agent):
                 logger.info(f"Episode {episode+1}: Avg Rewards = {avg_rewards[-1]}")
                 logger.info(f"Episode {episode+1}: Epsilon = {self.epsilon}")
                 logger.info(f"Episode {episode+1}: Steps this episode = {steps}")
-                logger.debug(f"Last Batch TD Errors: {td_errors.mean()}")
+                if self.no_distr:
+                    logger.debug(f"Last Batch TD Errors: {td_errors.mean()}")
 
                 torch.save({
                     'model_state_dict': self.q_net.state_dict(),
