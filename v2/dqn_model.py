@@ -74,6 +74,16 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
 
         self.args = args
+        self.num_actions = num_actions
+        self.num_atoms = self.args.num_atoms
+
+        if not self.args.no_noisy:
+            fc_layer = NoisyLinear
+        else:
+            fc_layer = nn.Linear
+
+        self.output_multiplier = self.num_atoms if not self.args.no_distr else 1
+        
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=8, stride=4),
@@ -87,41 +97,22 @@ class DQN(nn.Module):
             nn.Conv2d(64, 64, kernel_size=3, stride=1),
             nn.ReLU()
         )
-        
-        #noisy
-        if self.args.no_noisy:
-            #standard
-            self.fc1 = nn.Linear(64 * 7 * 7, 512)
-            if self.args.no_distr
-            self.fc2 = nn.Linear(512, num_actions)
 
-            #dueling
-            self.fc_value = nn.Sequential(
-                nn.Linear(64 * 7 * 7, 512),
-                nn.ReLU(),
-                nn.Linear(512, 1),
-            )
-            self.fc_advantage = nn.Sequential(
-                nn.Linear(64 * 7 * 7, 512),
-                nn.ReLU(),
-                nn.Linear(512, num_actions),
-            )
-        else: 
-            #standard
-            self.fc1 = NoisyLinear(64 * 7 * 7, 512)
-            self.fc2 = NoisyLinear(512, num_actions)
+        #no dueling
+        self.fc1 = fc_layer(64 * 7 * 7, 512)
+        self.fc2 = fc_layer(512, num_actions * self.output_multiplier)
 
-            #dueling
-            self.fc_value = nn.Sequential(
-                NoisyLinear(64 * 7 * 7, 512),
-                nn.ReLU(),
-                NoisyLinear(512, 1),
-            )
-            self.fc_advantage = nn.Sequential(
-                NoisyLinear(64 * 7 * 7, 512),
-                nn.ReLU(),
-                NoisyLinear(512, num_actions),
-            )
+        #dueling
+        self.fc_value = nn.Sequential(
+            fc_layer(64 * 7 * 7, 512),
+            nn.ReLU(),
+            fc_layer(512, 1 * self.output_multiplier),
+        )
+        self.fc_advantage = nn.Sequential(
+            fc_layer(64 * 7 * 7, 512),
+            nn.ReLU(),
+            fc_layer(512, num_actions * self.output_multiplier),
+        )
             
     def forward(self, x):
         """
@@ -135,6 +126,9 @@ class DQN(nn.Module):
         x = x.flatten(1)
 
         if self.args.no_dueling:
+            if not self.args.no_distr:  # Distributional output
+                x = x.view(-1, self.num_actions, self.args.num_atoms)
+                x = torch.softmax(x, dim=2)  # Ensure probabilities over atoms
             x = self.fc1(x)
             x = self.fc2(x)
             return x
@@ -142,5 +136,14 @@ class DQN(nn.Module):
         value = self.fc_value(x)
         advantage = self.fc_advantage(x)
 
-        x = value + (advantage - advantage.mean(dim=1, keepdim=True))
+        if not self.args.no_distr:
+            value = value.view(-1, 1, self.num_atoms)
+            advantage = advantage.view(-1, self.num_actions, self.num_atoms)
+            
+            x = value + (advantage - advantage.mean(dim=1, keepdim=True))
+            x = torch.softmax(x, dim=2)  # Ensure probabilities over atoms
+        else:
+            # Standard dueling 
+            x = value + (advantage - advantage.mean(dim=1, keepdim=True))
+
         return x

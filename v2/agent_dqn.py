@@ -35,7 +35,7 @@ np.random.seed(595)
 random.seed(595)
 
 class ReplayBuffer:
-    def __init__(self, max_size, state_shape, device, prioritized=False, alpha=0.6, beta=0.4, beta_increment=0.001):
+    def __init__(self, args, max_size, state_shape, device, prioritized=False, alpha=0.6, beta=0.4, beta_increment=0.001):
         self.max_size = max_size
         self.device = device
         self.prioritized = prioritized
@@ -44,6 +44,9 @@ class ReplayBuffer:
         self.beta_increment = beta_increment
         self.ptr = 0
         self.size = 0
+
+        #no distributional
+        self.no_distr = args.no_distr
 
         self.states = np.zeros((max_size, *state_shape), dtype=np.float32)
         self.actions = np.zeros((max_size,), dtype=np.int64)
@@ -101,9 +104,13 @@ class ReplayBuffer:
 
         return states, actions, rewards, next_states, dones, indices, weights
 
-    def update_priorities(self, indices, td_errors):
-        td_errors = td_errors.detach().cpu().numpy()
-        self.priorities[indices] = (np.abs(td_errors) + 1e-5) ** self.alpha
+    def update_priorities(self, indices, td_errors, log_probabilities, target_distribution):
+        if self.no_distr:
+            errors = td_errors.detach().cpu().numpy()
+        else:
+            errors = F.kl_div(log_probabilities, target_distribution, reduction='none')  # Shape: [batch_size, num_atoms]
+            errors = errors.sum(dim=1).detach().cpu().numpy()
+        self.priorities[indices] = (np.abs(errors) + 1e-5) ** self.alpha
         self.max_priority = max(self.max_priority, self.priorities[indices].max())
         # print("Prios: ", self.priorities[:100])
 
@@ -124,11 +131,13 @@ class NStep():
         return s, a, R, ns, d 
 
 class Distributional():
-    def __init__(self, args):
+    def __init__(self, args, gamma, device):
+        self.device = device
+        self.gamma = gamma
         self.num_atoms = args.num_atoms
         self.v_min = args.v_min
         self.v_max = args.v_max
-        self.delta = (self.v_max - self.v_min) / (self.num_atoms - 1)
+        self.delta_z = (self.v_max - self.v_min) / (self.num_atoms - 1)
         self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
 
     def project_distribution(self, reward, next_probabilities, done): #for distributional
@@ -177,9 +186,6 @@ class Agent_DQN(Agent):
         self.config.update(vars(args))
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        self.loss_fn = torch.nn.HuberLoss() if self.no.distr else F.kl_div(reduction='batchmean')
-
         self.steps = 0
 
         # Main parameters
@@ -213,6 +219,7 @@ class Agent_DQN(Agent):
 
         state_shape = env.observation_space.shape
         self.buffer = ReplayBuffer(
+            args,
             self.max_buffer_size,
             state_shape,
             self.device,
@@ -229,7 +236,10 @@ class Agent_DQN(Agent):
 
         #distributional
         self.no_distr = args.no_distr
-        self.distr = Distributional(self, args)
+        self.distr = Distributional(args, self.gamma, device=self.device)
+        self.num_atoms = args.num_atoms
+        self.v_max = args.v_max
+        self.v_min = args.v_min
 
         # Initialize model and target net
         self.q_net = DQN(args).to(self.device)
@@ -237,6 +247,8 @@ class Agent_DQN(Agent):
         self.target_net.load_state_dict(self.q_net.state_dict())
         self.optimizer = optim.AdamW(self.q_net.parameters(), lr=self.learning_rate)
 
+        self.loss_fn = torch.nn.HuberLoss()
+        
         if args.test_dqn or args.train_dqn_again:
             print('Loading trained model')
             checkpoint = torch.load(self.data_dir + self.model_name, map_location=self.device)
@@ -329,6 +341,8 @@ class Agent_DQN(Agent):
                 target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
             else: # Main network selects the best actions
                 main_probabilities = self.q_net(next_states).to(self.device)  # [batch_size, num_actions, num_bins]
+                # print("main probs shape: ", main_probabilities.shape)
+                # print("support shape: ", self.distr.support.shape)
                 main_q_values = torch.sum(main_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
                 best_actions = torch.argmax(main_q_values, dim=1)  # [batch_size]
 
@@ -337,12 +351,15 @@ class Agent_DQN(Agent):
                 target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
 
             # Project target distribution
-            target_distribution = self.project_distribution(rewards, target_probabilities, dones)
-            loss = self.loss_fn(log_probabilities, target_distribution)
+            target_distribution = self.distr.project_distribution(rewards, target_probabilities, dones)
+            loss = F.kl_div(log_probabilities, target_distribution, reduction='batchmean')
             td_errors = None #set to none for return since there are no td_errors in this method
 
         if not self.no_prio_replay:
-            self.buffer.update_priorities(indices, td_errors)
+            if self.no_distr:
+                log_probabilities = None
+                target_distribution = None
+            self.buffer.update_priorities(indices, td_errors, log_probabilities, target_distribution)
 
         self.optimizer.zero_grad()
         loss.backward()
