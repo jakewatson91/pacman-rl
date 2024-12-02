@@ -142,6 +142,8 @@ class DQN(nn.Module):
             
             x = value + (advantage - advantage.mean(dim=1, keepdim=True))
             x = torch.softmax(x, dim=2)  # Ensure probabilities over atoms
+            # print("Q Net output: ", x)
+            # print("Q Net output shape: ", x.shape)        
         else:
             # Standard dueling 
             x = value + (advantage - advantage.mean(dim=1, keepdim=True))

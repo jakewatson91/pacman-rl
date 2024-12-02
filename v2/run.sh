@@ -9,4 +9,4 @@
 #SBATCH --job-name="Train pacman" 
 
 source activate p4
-python main.py --train_dqn --data_dir "pacmantest/" --model_name "noisy50.pth" --epsilon_decay_steps 500000 --prioritized_beta_increment 0.0001 --n_step 5 --episodes 50000 --max_buffer_size 100000 --buffer_start 50000
+python main.py --train_dqn --data_dir "pacmantest/" --model_name "rainbow10.pth" --epsilon_decay_steps 100000 --prioritized_beta_increment 0.0001 --n_step 5 --episodes 50000 --max_buffer_size 100000 --buffer_start 50000

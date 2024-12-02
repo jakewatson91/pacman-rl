@@ -110,6 +110,9 @@ class ReplayBuffer:
         else:
             errors = F.kl_div(log_probabilities, target_distribution, reduction='none')  # Shape: [batch_size, num_atoms]
             errors = errors.sum(dim=1).detach().cpu().numpy()
+            errors = np.abs(errors) / (np.abs(errors).max() + 1e-5) #scale errors
+            # print(f"KL Divergence Errors Range: min={errors.min()}, max={errors.max()}") ## min should not be too close to 0 ie. 10e-5+
+
         self.priorities[indices] = (np.abs(errors) + 1e-5) ** self.alpha
         self.max_priority = max(self.max_priority, self.priorities[indices].max())
         # print("Prios: ", self.priorities[:100])
@@ -140,38 +143,29 @@ class Distributional():
         self.delta_z = (self.v_max - self.v_min) / (self.num_atoms - 1)
         self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
 
-    def project_distribution(self, reward, next_probabilities, done): #for distributional
+    def project_distribution(self, reward, next_probabilities, done):
         batch_size = reward.size(0)
-        projected_distribution = torch.zeros((batch_size, self.num_atoms), device=self.device)
-
-        for j in range(self.num_atoms):
-            # Bellman update
-            tz_j = reward + (1 - done) * (self.gamma * (self.v_min + j * self.delta_z))
-            tz_j = tz_j.clamp(self.v_min, self.v_max)
-
-            # Calculate projection
-            b = (tz_j - self.v_min) / self.delta_z
-            l, u = b.floor().long(), b.ceil().long()
-
-            # Initialize the projected distribution with zeros
-            projected_distribution = torch.zeros_like(next_probabilities, device=next_probabilities.device)
-
-            # Compute the contributions for lower and upper bins
-            lower_contrib = next_probabilities * (u - b).unsqueeze(1)
-            upper_contrib = next_probabilities * (b - l).unsqueeze(1)
-
-            # Expand l and u to match the dimensions of the contributions
-            l_expanded = l.unsqueeze(1).expand(-1, self.num_atoms)
-            u_expanded = u.unsqueeze(1).expand(-1, self.num_atoms)
-
-            # print("projected_distribution shape:", projected_distribution.shape)  # Expected: [batch_size, num_atoms]
-            # print("l_expanded shape:", l_expanded.shape)  # Expected: [batch_size, num_atoms]
-            # print("lower_contrib shape:", lower_contrib.shape)  # Expected: [batch_size, num_atoms]
-
-            # Scatter the contributions to their respective bins
-            projected_distribution.scatter_add_(1, l_expanded, lower_contrib)
-            projected_distribution.scatter_add_(1, u_expanded, upper_contrib)
-
+        
+        # Compute tz without loops
+        tz = reward.unsqueeze(1) + (1 - done.unsqueeze(1)) * self.gamma * self.support.unsqueeze(0)
+        tz = tz.clamp(self.v_min, self.v_max)
+        
+        b = (tz - self.v_min) / self.delta_z
+        l = b.floor().long()
+        u = b.ceil().long()
+        
+        l = l.clamp(0, self.num_atoms - 1)
+        u = u.clamp(0, self.num_atoms - 1)
+        
+        d_m_l = (u.float() - b)
+        d_m_u = (b - l.float())
+        
+        projected_distribution = torch.zeros(batch_size, self.num_atoms, device=self.device)
+        
+        # Use scatter_add_ for vectorized addition
+        projected_distribution.scatter_add_(1, l, next_probabilities * d_m_l)
+        projected_distribution.scatter_add_(1, u, next_probabilities * d_m_u)
+        
         return projected_distribution
 
 class Agent_DQN(Agent):
@@ -265,20 +259,17 @@ class Agent_DQN(Agent):
         """
         pass
 
-    def make_action(self, observation, num_actions=5, test=True):
+    def make_action(self, qs, num_actions=5, test=True):
         """
         Return predicted action of your agent.
         """
-        obs_tensor = torch.from_numpy(observation).float().unsqueeze(0).permute(0, 3, 1, 2).to(self.device, non_blocking=True)  # Ensure input is float32
-
-        with amp.autocast(device_type=self.device.type):
-            q_vals = self.q_net(obs_tensor)
-
         if not test and random.random() < self.epsilon:
             action = random.randint(0, num_actions - 1)
             # print("action space: ", self.env.action_space.sample())
         else:
-            action = torch.argmax(q_vals, dim=1).item()
+            # print("Q shape: ", qs.shape)
+            action = torch.argmax(qs, dim=1).item()
+            # print("Selected action: ", action)
 
         return action
 
@@ -293,11 +284,11 @@ class Agent_DQN(Agent):
         else:
             self.buffer.add(transition)
     
-    def fill_buffer(self):
+    def fill_buffer(self, num_actions=5):
         state = self.env.reset()
         pbar = tqdm(total=self.buffer_start, desc="Filling Buffer", unit="steps")
         while self.buffer.size < self.buffer_start:
-            action = self.make_action(state, test=False)
+            action = np.random.randint(0, num_actions-1)
             next_state, reward, done, _, _ = self.env.step(action)
             self.push(state, action, reward, next_state, done)
             state = next_state
@@ -331,7 +322,7 @@ class Agent_DQN(Agent):
         else: # Compute predicted probabilities for current states
             probabilities = self.q_net(states).to(self.device)  # [batch_size, num_actions, num_bins]
             batch_indices = torch.arange(self.batch_size, device=self.device)
-            log_probabilities = torch.log(probabilities[batch_indices, actions])  # [batch_size, num_bins]
+            log_probabilities = torch.log(torch.clamp(probabilities[batch_indices, actions], min=1e-9))
 
             if self.no_double:
                 # Compute target probabilities using the target network
@@ -352,6 +343,8 @@ class Agent_DQN(Agent):
 
             # Project target distribution
             target_distribution = self.distr.project_distribution(rewards, target_probabilities, dones)
+            target_distribution = torch.clamp(target_distribution, min=1e-9)
+            target_distribution = target_distribution / target_distribution.sum(dim=1, keepdim=True) #normalize
             loss = F.kl_div(log_probabilities, target_distribution, reduction='batchmean')
             td_errors = None #set to none for return since there are no td_errors in this method
 
@@ -389,7 +382,14 @@ class Agent_DQN(Agent):
             steps = 0
 
             while not done:
-                action = self.make_action(state, test=False)
+                # At the start of train()
+                with torch.no_grad():  # No gradients needed for action selection
+                    observation = torch.from_numpy(state).float().unsqueeze(0).permute(0, 3, 1, 2).to(self.device, non_blocking=True) # [num_actions, num_atoms]
+                    qs = self.q_net(observation).to(self.device)
+                    if not self.no_distr:
+                        qs = torch.sum(qs * self.distr.support, dim=2)  # summing reduces it to shape [actions]
+                        # print("Q shape after sum: ", qs.shape)
+                action = self.make_action(qs, test=False)
                 next_state, reward, done, truncated, _ = self.env.step(action)
                 self.push(state, action, reward, next_state, done)
 
