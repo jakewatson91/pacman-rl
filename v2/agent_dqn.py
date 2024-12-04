@@ -259,10 +259,18 @@ class Agent_DQN(Agent):
         """
         pass
 
-    def make_action(self, qs, num_actions=5, test=True):
+    def make_action(self, state, num_actions=5, test=True):
         """
         Return predicted action of your agent.
         """
+        with torch.no_grad():  # No gradients needed for action selection
+            observation = torch.from_numpy(state).float().unsqueeze(0).permute(0, 3, 1, 2).to(self.device, non_blocking=True) # [num_actions, num_atoms]
+            qs = self.q_net(observation).to(self.device)
+        
+        if not self.no_distr:
+            qs = torch.sum(qs * self.distr.support, dim=2)  # summing reduces it to shape [actions]
+                # print("Q shape after sum: ", qs.shape)
+        
         if not test and random.random() < self.epsilon:
             action = random.randint(0, num_actions - 1)
             # print("action space: ", self.env.action_space.sample())
@@ -380,17 +388,14 @@ class Agent_DQN(Agent):
             total_reward = 0
             episode_loss = 0
             steps = 0
+            prev_lives = 3 #for reward shaping
 
             while not done:
-                # At the start of train()
-                with torch.no_grad():  # No gradients needed for action selection
-                    observation = torch.from_numpy(state).float().unsqueeze(0).permute(0, 3, 1, 2).to(self.device, non_blocking=True) # [num_actions, num_atoms]
-                    qs = self.q_net(observation).to(self.device)
-                    if not self.no_distr:
-                        qs = torch.sum(qs * self.distr.support, dim=2)  # summing reduces it to shape [actions]
-                        # print("Q shape after sum: ", qs.shape)
-                action = self.make_action(qs, test=False)
-                next_state, reward, done, truncated, _ = self.env.step(action)
+                action = self.make_action(state, test=False)
+                next_state, reward, done, truncated, info = self.env.step(action)
+                if info["lives"] < prev_lives:
+                    reward -= 100
+                    prev_lives -= 1
                 self.push(state, action, reward, next_state, done)
 
                 total_reward += reward
@@ -447,7 +452,7 @@ class Agent_DQN(Agent):
         plt.xlabel('Episodes')
         plt.ylabel('Avg Rewards')
         plt.savefig(self.data_dir + 'avg_rewards.png')
-        wandb.log({"Avg Rewards Plot": wandb.Image(self.data_dir + 'avg_rewards.png')})
+        # wandb.log({"Avg Rewards Plot": wandb.Image(self.data_dir + 'avg_rewards.png')})
         plt.clf()
 
         # Plot rewards
@@ -457,7 +462,7 @@ class Agent_DQN(Agent):
         plt.xlabel('Episodes')
         plt.ylabel('Rewards')
         plt.savefig(self.data_dir + 'rewards.png')
-        wandb.log({"Rewards Plot": wandb.Image(self.data_dir + 'rewards.png')})
+        # wandb.log({"Rewards Plot": wandb.Image(self.data_dir + 'rewards.png')})
         plt.clf()
 
         plt.plot(np.log(losses))
@@ -466,7 +471,7 @@ class Agent_DQN(Agent):
         plt.xlabel('Episodes')
         plt.ylabel('Loss')
         plt.savefig(self.data_dir + 'loss.png')
-        wandb.log({"Loss Plot": wandb.Image(self.data_dir + 'loss.png')})
+        # wandb.log({"Loss Plot": wandb.Image(self.data_dir + 'loss.png')})
         plt.clf()
 
         plt.close()

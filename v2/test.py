@@ -51,7 +51,7 @@ def test(agent, env, total_episodes=10, record_video=False):
 
     env.close()
 
-    print('Run %d episodes for 5 lives each' % (total_episodes))
+    print('Run %d episodes for 3 lives each' % (total_episodes))
     print('Mean:', np.mean(rewards))
     print('rewards', rewards)
     print('running time', time.time()-start_time)
