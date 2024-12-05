@@ -241,11 +241,16 @@ class Agent_DQN(Agent):
         self.target_net.load_state_dict(self.q_net.state_dict())
         self.optimizer = optim.AdamW(self.q_net.parameters(), lr=self.learning_rate)
 
+        #reward shaping
+        self.life_penalty = args.life_penalty
+
+        #scalar loss
         self.loss_fn = torch.nn.HuberLoss()
         
         if args.test_dqn or args.train_dqn_again:
             print('Loading trained model')
             checkpoint = torch.load(self.data_dir + self.model_name, map_location=self.device)
+            # print(checkpoint['model_state_dict'].keys())
             self.q_net.load_state_dict(checkpoint['model_state_dict'])
             self.target_net.load_state_dict(checkpoint['model_state_dict'])
             self.epsilon = self.epsilon_min
@@ -394,7 +399,7 @@ class Agent_DQN(Agent):
                 action = self.make_action(state, test=False)
                 next_state, reward, done, truncated, info = self.env.step(action)
                 if info["lives"] < prev_lives:
-                    reward -= 100
+                    reward -= self.life_penalty
                     prev_lives -= 1
                 self.push(state, action, reward, next_state, done)
 

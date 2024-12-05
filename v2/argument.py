@@ -61,6 +61,9 @@ def add_arguments(parser):
     parser.add_argument('--no_noisy', action='store_true', help='use noisy architecture or not')
     parser.add_argument('--no_distr', action='store_true', help='use distributional architecture or not')
    
+    #reward shaping
+    parser.add_argument('--life_penalty', type=int, default=100, help='feature size')
+
     return parser
 
 # linear decay (epsiolon -epsilon_min) / epsilon step

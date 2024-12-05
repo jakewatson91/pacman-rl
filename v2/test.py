@@ -14,13 +14,13 @@ from tqdm import tqdm
 
 seed = 11037
 
-def test(agent, env, total_episodes=10, record_video=False):
+def test(agent, env, total_episodes=10, record_video=False, vid_name = "test_vid"):
     rewards = []
     env.seed(seed)
 
     vid = None  # Initialize vid to None to ensure it's accessible outside the if block
     if record_video:
-        vid = video_recorder.VideoRecorder(env=env.env, path="test_vid.mp4")
+        vid = video_recorder.VideoRecorder(env=env.env, path="videos/" + vid_name + ".mp4")
     start_time = time.time()
     
     
