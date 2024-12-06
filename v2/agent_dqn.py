@@ -206,6 +206,11 @@ class Agent_DQN(Agent):
         self.rewards = []
         self.losses = []
 
+        # for saving graphs and csv's
+        position = self.model_name.find(".")
+        self.model_dir_name = self.model_name[:position]
+        os.makedirs(self.data_dir + self.model_dir_name, exist_ok=True)
+
         # Initialize buffer
         self.max_buffer_size = args.max_buffer_size
         self.buffer_start = args.buffer_start
@@ -456,7 +461,7 @@ class Agent_DQN(Agent):
         plt.title('Avg Rewards')
         plt.xlabel('Episodes')
         plt.ylabel('Avg Rewards')
-        plt.savefig(self.data_dir + 'avg_rewards.png')
+        plt.savefig(self.data_dir + self.model_dir_name + '/avg_rewards.png')
         # wandb.log({"Avg Rewards Plot": wandb.Image(self.data_dir + 'avg_rewards.png')})
         plt.clf()
 
@@ -466,7 +471,7 @@ class Agent_DQN(Agent):
         plt.title('Rewards')
         plt.xlabel('Episodes')
         plt.ylabel('Rewards')
-        plt.savefig(self.data_dir + 'rewards.png')
+        plt.savefig(self.data_dir + self.model_dir_name + '/rewards.png')
         # wandb.log({"Rewards Plot": wandb.Image(self.data_dir + 'rewards.png')})
         plt.clf()
 
@@ -475,7 +480,7 @@ class Agent_DQN(Agent):
         plt.title('Loss')
         plt.xlabel('Episodes')
         plt.ylabel('Loss')
-        plt.savefig(self.data_dir + 'loss.png')
+        plt.savefig(self.data_dir + self.model_dir_name + '/loss.png')
         # wandb.log({"Loss Plot": wandb.Image(self.data_dir + 'loss.png')})
         plt.clf()
 
@@ -492,10 +497,10 @@ class Agent_DQN(Agent):
             })
 
         # Write to file
-        np.savetxt(self.data_dir + '/rewards.csv', all_rewards, delimiter=',', fmt='%d')
-        np.savetxt(self.data_dir + '/avg_rewards.csv', avg_rewards, delimiter=',')
-        np.savetxt(self.data_dir + '/loss.csv', losses, delimiter=',')
-        np.savetxt(self.data_dir + '/epsilon.csv', epsilons, delimiter=',')
+        np.savetxt(self.data_dir + self.model_dir_name + '/rewards.csv', all_rewards, delimiter=',', fmt='%d')
+        np.savetxt(self.data_dir + self.model_dir_name + '/avg_rewards.csv', avg_rewards, delimiter=',')
+        np.savetxt(self.data_dir + self.model_dir_name +'/loss.csv', losses, delimiter=',')
+        np.savetxt(self.data_dir + self.model_dir_name + '/epsilon.csv', epsilons, delimiter=',')
 
     def update_epsilon(self):
         self.epsilon -= (self.epsilon_max - self.epsilon_min) / self.epsilon_decay_steps
