@@ -134,12 +134,12 @@ class NStep():
         return s, a, R, ns, d 
 
 class Distributional():
-    def __init__(self, args, gamma, device):
+    def __init__(self, v_max, v_min, num_atoms, gamma, device):
         self.device = device
         self.gamma = gamma
-        self.num_atoms = args.num_atoms
-        self.v_min = args.v_min
-        self.v_max = args.v_max
+        self.num_atoms = num_atoms
+        self.v_min = v_min
+        self.v_max = v_max
         self.delta_z = (self.v_max - self.v_min) / (self.num_atoms - 1)
         self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
 
@@ -235,7 +235,10 @@ class Agent_DQN(Agent):
 
         #distributional
         self.no_distr = args.no_distr
-        self.distr = Distributional(args, self.gamma, device=self.device)
+        self.v_max = args.v_max
+        self.v_min = args.v_min
+        self.num_atoms = args.num_atoms
+        self.distr = Distributional(self.v_max, self.v_min, self.num_atoms, self.gamma, self.device)
         self.num_atoms = args.num_atoms
         self.v_max = args.v_max
         self.v_min = args.v_min
@@ -251,6 +254,9 @@ class Agent_DQN(Agent):
 
         #scalar loss
         self.loss_fn = torch.nn.HuberLoss()
+
+        #fill buffer before training or not
+        self.no_fill = args.no_fill
         
         if args.test_dqn or args.train_dqn_again:
             print('Loading trained model')
@@ -297,8 +303,10 @@ class Agent_DQN(Agent):
         if not self.no_nstep:
             self.n_step.buffer.append(transition)
             processed_transition = self.n_step.compute_return(done) #return for oldest transition in buffer
+            # print("transition reward: ", transition[2])
             if processed_transition: #if n-step buffer is filled
-                self.buffer.add(transition)
+                # print("processed transition reward: ", processed_transition[2])
+                self.buffer.add(processed_transition)
         else:
             self.buffer.add(transition)
     
@@ -389,7 +397,8 @@ class Agent_DQN(Agent):
         avg_losses = []
         epsilons = [self.epsilon]
 
-        self.fill_buffer()
+        if not self.no_fill:
+            self.fill_buffer()
 
         for episode in tqdm(range(self.episodes)):
             state = self.env.reset()
@@ -406,7 +415,11 @@ class Agent_DQN(Agent):
                 if info["lives"] < prev_lives:
                     reward -= self.life_penalty
                     prev_lives -= 1
-                self.push(state, action, reward, next_state, done)
+                transition = self.push(state, action, reward, next_state, done)
+                
+                #increase v_max if return is greater
+                if not self.no_distr and transition and transition[2] > self.v_max:
+                    self.v_max += 5
 
                 total_reward += reward
                 self.steps += 1

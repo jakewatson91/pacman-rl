@@ -60,6 +60,7 @@ def add_arguments(parser):
     parser.add_argument('--no_double', action='store_true', help='use double architecture or not')
     parser.add_argument('--no_noisy', action='store_true', help='use noisy architecture or not')
     parser.add_argument('--no_distr', action='store_true', help='use distributional architecture or not')
+    parser.add_argument('--no_fill', action='store_true', help='fill buffer before training start or not')
    
     #reward shaping
     parser.add_argument('--life_penalty', type=int, default=100, help='feature size')
