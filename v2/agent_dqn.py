@@ -114,7 +114,7 @@ class ReplayBuffer:
             # print(f"KL Divergence Errors Range: min={errors.min()}, max={errors.max()}") ## min should not be too close to 0 ie. 10e-5+
 
         self.priorities[indices] = (np.abs(errors) + 1e-5) ** self.alpha
-        self.max_priority = max(self.max_priority, self.priorities[indices].max())
+        self.max_priority = self.priorities.max()
         # print("Prios: ", self.priorities[:100])
 
 class NStep():
@@ -230,7 +230,7 @@ class Agent_DQN(Agent):
 
         #N-Step buffer
         self.no_nstep = args.no_nstep
-        self.n = args.n_step
+        self.n = args.n
         self.n_step = NStep(self.n, self.gamma)
 
         #distributional
@@ -247,10 +247,16 @@ class Agent_DQN(Agent):
         self.q_net = DQN(args).to(self.device)
         self.target_net = DQN(args).to(self.device)
         self.target_net.load_state_dict(self.q_net.state_dict())
-        self.optimizer = optim.AdamW(self.q_net.parameters(), lr=self.learning_rate)
+        self.optimizer = optim.AdamW(self.q_net.parameters(), lr=self.learning_rate, eps=1e-4)
 
         #reward shaping
         self.life_penalty = args.life_penalty
+
+        #risk scaling
+        self.risk_scaling = args.risk_scaling
+        self.risk_preference = args.risk_preference
+        self.n_scaling = args.n_scaling
+        self.max_n = args.max_n
 
         #scalar loss
         self.loss_fn = torch.nn.HuberLoss()
@@ -286,6 +292,9 @@ class Agent_DQN(Agent):
         if not self.no_distr:
             qs = torch.sum(qs * self.distr.support, dim=2)  # summing reduces it to shape [actions]
                 # print("Q shape after sum: ", qs.shape)
+            if self.risk_scaling:
+                qs_std = torch.sqrt(torch.sum(qs * (self.distr.support ** 2), dim=2) - qs_mean ** 2)
+                qs = qs + self.risk_preference * qs_std
         
         if not test and random.random() < self.epsilon:
             action = random.randint(0, num_actions - 1)
@@ -303,12 +312,13 @@ class Agent_DQN(Agent):
         if not self.no_nstep:
             self.n_step.buffer.append(transition)
             processed_transition = self.n_step.compute_return(done) #return for oldest transition in buffer
-            # print("transition reward: ", transition[2])
             if processed_transition: #if n-step buffer is filled
                 # print("processed transition reward: ", processed_transition[2])
                 self.buffer.add(processed_transition)
+                return processed_transition
         else:
             self.buffer.add(transition)
+            return transition
     
     def fill_buffer(self, num_actions=5):
         state = self.env.reset()
@@ -409,6 +419,10 @@ class Agent_DQN(Agent):
             steps = 0
             prev_lives = 3 #for reward shaping
 
+            #testing scaling n as episode gets longer
+            n = self.n
+            reward_threshold = 500
+
             while not done:
                 action = self.make_action(state, test=False)
                 next_state, reward, done, truncated, info = self.env.step(action)
@@ -416,12 +430,19 @@ class Agent_DQN(Agent):
                     reward -= self.life_penalty
                     prev_lives -= 1
                 transition = self.push(state, action, reward, next_state, done)
-                
+                # print("n-step size: ", len(self.n_step.buffer))
                 #increase v_max if return is greater
                 if not self.no_distr and transition and transition[2] > self.v_max:
                     self.v_max += 5
 
                 total_reward += reward
+                
+                #testing scaling n as episode gets longer
+                if self.n_scaling:
+                    if total_reward >= reward_threshold and self.n < self.max_n:
+                        n += 1
+                        reward_threshold += 100
+
                 self.steps += 1
                 steps += 1
 
@@ -451,11 +472,12 @@ class Agent_DQN(Agent):
             # Logging and saving
             if episode and episode % self.write_freq == 0:
                 self.makePlots(all_rewards, avg_rewards, losses, epsilons)
-                logger.info(f"Episode {episode+1}: Loss = {episode_loss}")
+                logger.info(f"Episode {episode+1}: Loss this episode = {episode_loss}")
                 logger.info(f"Episode {episode+1}: Avg Loss: {avg_losses[-1]}")
                 logger.info(f"Episode {episode+1}: Avg Rewards = {avg_rewards[-1]}")
                 logger.info(f"Episode {episode+1}: Epsilon = {self.epsilon}")
                 logger.info(f"Episode {episode+1}: Steps this episode = {steps}")
+                logger.info(f"Episode {episode+1}: V-max = {self.v_max}")               
                 if self.no_distr:
                     logger.debug(f"Last Batch TD Errors: {td_errors.mean()}")
 

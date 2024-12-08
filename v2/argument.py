@@ -33,15 +33,22 @@ def add_arguments(parser):
     parser.add_argument('--prioritized_beta_increment', type=float, default=0.0001, help='beta increment for prioritized experience replay')
 
     #multi-step learning hyperparameters
-    parser.add_argument('--n_step', type=int, default=3, help='n-step learning')
+    parser.add_argument('--n', type=int, default=3, help='n-step learning')
 
     #noisy hyperparameters
-    parser.add_argument("--noisy_std", type=float, default=0.1)
+    parser.add_argument("--noisy_std", type=float, default=0.5)
 
     #distributional q-learning hyperparameters
     parser.add_argument("--num_atoms", type=int, default=51)
     parser.add_argument("--v_min", type=float, default=0.0)
     parser.add_argument("--v_max", type=float, default=10)
+
+    #risk scaling
+    parser.add_argument("--risk_scaling", action='store_true', help='risk scaling or not')
+    parser.add_argument("--risk_preference", type=float, default=1.0, help='1 indicates high risk preference')
+    parser.add_argument("--n_scaling", action='store_true', help='n scaling or not')
+    parser.add_argument("--max_n", type=int, default=10, help='limit n in n scaling')
+
 
     #specify locations for saving
     parser.add_argument('--data_dir', type=str, default='data/', help='directory to save data')
