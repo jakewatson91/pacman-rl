@@ -407,6 +407,8 @@ class Agent_DQN(Agent):
         losses = []
         avg_losses = []
         epsilons = [self.epsilon]
+        ns = []
+        risks = []
 
         if not self.no_fill:
             self.fill_buffer()
@@ -445,9 +447,9 @@ class Agent_DQN(Agent):
                         n += 1
                     if self.risk_scaling:
                         self.risk_scaling_on = True
-                        risk += 0.1
+                        risk += 0.25
                         risk = min(risk, 1.0)
-                    reward_threshold += 10
+                    reward_threshold += 5
 
                 self.steps += 1
                 steps += 1
@@ -474,6 +476,8 @@ class Agent_DQN(Agent):
             losses.append(episode_loss)
             avg_losses.append(np.mean(losses[-30:]))
             epsilons.append(self.epsilon)
+            ns.append(n)
+            risks.append(risk)
 
             # Logging and saving
             if episode and episode % self.write_freq == 0:
@@ -484,7 +488,10 @@ class Agent_DQN(Agent):
                 logger.info(f"Episode {episode+1}: Epsilon = {self.epsilon}")
                 logger.info(f"Episode {episode+1}: Steps this episode = {steps}")
                 logger.info(f"Episode {episode+1}: V-max = {self.v_max}")               
-                logger.info(f"Episode {episode+1}: N = {n}")               
+                if self.n_scaling:
+                    logger.info(f"Episode {episode+1}: Avg N = {np.mean(ns[-30:])}")    
+                if self.risk_scaling:
+                    logger.info(f"Episode {episode+1}: Avg Risk = {np.mean(risks[-30:])}")                          
                 if self.no_distr:
                     logger.debug(f"Last Batch TD Errors: {td_errors.mean()}")
 
