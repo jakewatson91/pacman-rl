@@ -133,16 +133,17 @@ class NStep():
         return s, a, R, ns, d 
 
 class Distributional():
-    def __init__(self, v_max, v_min, num_atoms, gamma, device):
+    def __init__(self, num_atoms, gamma, device):
         self.device = device
         self.gamma = gamma
         self.num_atoms = num_atoms
-        self.v_min = v_min
+
+    def project_distribution(self, v_min, v_max, reward, next_probabilities, done):
+        self.v_min = v_min 
         self.v_max = v_max
         self.delta_z = (self.v_max - self.v_min) / (self.num_atoms - 1)
         self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
-
-    def project_distribution(self, reward, next_probabilities, done):
+        
         batch_size = reward.size(0)
         
         # Compute tz without loops
@@ -237,7 +238,7 @@ class Agent_DQN(Agent):
         self.v_max = args.v_max
         self.v_min = args.v_min
         self.num_atoms = args.num_atoms
-        self.distr = Distributional(self.v_max, self.v_min, self.num_atoms, self.gamma, self.device)
+        self.distr = Distributional(self.num_atoms, self.gamma, self.device)
         self.num_atoms = args.num_atoms
         self.v_max = args.v_max
         self.v_min = args.v_min
@@ -379,7 +380,7 @@ class Agent_DQN(Agent):
                 target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
 
             # Project target distribution
-            target_distribution = self.distr.project_distribution(rewards, target_probabilities, dones)
+            target_distribution = self.distr.project_distribution(self.v_min, self.v_max, rewards, target_probabilities, dones)
             target_distribution = torch.clamp(target_distribution, min=1e-9)
             target_distribution = target_distribution / target_distribution.sum(dim=1, keepdim=True) #normalize
             loss = F.kl_div(log_probabilities, target_distribution, reduction='batchmean')
