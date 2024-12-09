@@ -118,13 +118,12 @@ class ReplayBuffer:
         # print("Prios: ", self.priorities[:100])
 
 class NStep():
-    def __init__(self, n, gamma):
-        self.n = n
+    def __init__(self, gamma):
         self.gamma = gamma
-        self.buffer = deque(maxlen=self.n)
+        self.buffer = deque()
 
-    def compute_return(self, done):
-        if len(self.buffer) < self.n and not done:
+    def compute_return(self, done, n):
+        if len(self.buffer) < n and not done:
             return None
         R = 0
         for i, (_, _, reward, _, _) in enumerate(self.buffer):
@@ -231,7 +230,7 @@ class Agent_DQN(Agent):
         #N-Step buffer
         self.no_nstep = args.no_nstep
         self.n = args.n
-        self.n_step = NStep(self.n, self.gamma)
+        self.n_step = NStep(self.gamma)
 
         #distributional
         self.no_distr = args.no_distr
@@ -254,6 +253,7 @@ class Agent_DQN(Agent):
 
         #risk scaling
         self.risk_scaling = args.risk_scaling
+        self.risk_scaling_on = args.risk_scaling_on
         self.risk_preference = args.risk_preference
         self.n_scaling = args.n_scaling
         self.max_n = args.max_n
@@ -281,7 +281,7 @@ class Agent_DQN(Agent):
         """
         pass
 
-    def make_action(self, state, num_actions=5, test=True):
+    def make_action(self, state, num_actions=5, risk=0, test=True):
         """
         Return predicted action of your agent.
         """
@@ -290,12 +290,13 @@ class Agent_DQN(Agent):
             qs = self.q_net(observation).to(self.device)
         
         if not self.no_distr:
-            qs = torch.sum(qs * self.distr.support, dim=2)  # summing reduces it to shape [actions]
+            q_mean = torch.sum(qs * self.distr.support, dim=2)  # summing reduces it to shape [actions]
                 # print("Q shape after sum: ", qs.shape)
-            if self.risk_scaling:
-                qs_std = torch.sqrt(torch.sum(qs * (self.distr.support ** 2), dim=2) - qs_mean ** 2)
-                qs = qs + self.risk_preference * qs_std
-        
+            if self.risk_scaling and self.risk_scaling_on:
+                q_std = torch.sqrt(torch.sum(qs * (self.distr.support ** 2), dim=2) - q_mean ** 2)
+                qs = q_mean + risk * q_std
+            else:
+                qs = q_mean
         if not test and random.random() < self.epsilon:
             action = random.randint(0, num_actions - 1)
             # print("action space: ", self.env.action_space.sample())
@@ -306,12 +307,12 @@ class Agent_DQN(Agent):
 
         return action
 
-    def push(self, state, action, reward, next_state, done):
+    def push(self, state, action, reward, next_state, done, n):
         """Push new data to buffer."""
         transition = state, action, reward, next_state, done
         if not self.no_nstep:
             self.n_step.buffer.append(transition)
-            processed_transition = self.n_step.compute_return(done) #return for oldest transition in buffer
+            processed_transition = self.n_step.compute_return(done, n) #return for oldest transition in buffer
             if processed_transition: #if n-step buffer is filled
                 # print("processed transition reward: ", processed_transition[2])
                 self.buffer.add(processed_transition)
@@ -326,7 +327,7 @@ class Agent_DQN(Agent):
         while self.buffer.size < self.buffer_start:
             action = np.random.randint(0, num_actions-1)
             next_state, reward, done, _, _ = self.env.step(action)
-            self.push(state, action, reward, next_state, done)
+            self.push(state, action, reward, next_state, done, self.n)
             state = next_state
             pbar.update(1)
             if done:
@@ -420,16 +421,17 @@ class Agent_DQN(Agent):
             prev_lives = 3 #for reward shaping
 
             #testing scaling n as episode gets longer
+            reward_threshold = 50
             n = self.n
-            reward_threshold = 500
+            risk = 0
 
             while not done:
-                action = self.make_action(state, test=False)
+                action = self.make_action(state, num_actions=5, risk=risk, test=False)
                 next_state, reward, done, truncated, info = self.env.step(action)
                 if info["lives"] < prev_lives:
                     reward -= self.life_penalty
                     prev_lives -= 1
-                transition = self.push(state, action, reward, next_state, done)
+                transition = self.push(state, action, reward, next_state, done, n)
                 # print("n-step size: ", len(self.n_step.buffer))
                 #increase v_max if return is greater
                 if not self.no_distr and transition and transition[2] > self.v_max:
@@ -437,11 +439,15 @@ class Agent_DQN(Agent):
 
                 total_reward += reward
                 
-                #testing scaling n as episode gets longer
-                if self.n_scaling:
-                    if total_reward >= reward_threshold and self.n < self.max_n:
+                #testing scaling n and risk as episode gets longer
+                if total_reward >= reward_threshold:
+                    if self.n_scaling and self.n < self.max_n: 
                         n += 1
-                        reward_threshold += 100
+                    if self.risk_scaling:
+                        self.risk_scaling_on = True
+                        risk += 0.1
+                        risk = min(risk, 1.0)
+                    reward_threshold += 10
 
                 self.steps += 1
                 steps += 1
@@ -459,7 +465,7 @@ class Agent_DQN(Agent):
                 state = next_state
             
             while len(self.n_step.buffer) > 0: #handling remaining transitions in n-step buffer after done
-                transition = self.n_step.compute_return(done)
+                transition = self.n_step.compute_return(done, n)
                 if transition:
                     self.buffer.add(transition)
 
@@ -478,6 +484,7 @@ class Agent_DQN(Agent):
                 logger.info(f"Episode {episode+1}: Epsilon = {self.epsilon}")
                 logger.info(f"Episode {episode+1}: Steps this episode = {steps}")
                 logger.info(f"Episode {episode+1}: V-max = {self.v_max}")               
+                logger.info(f"Episode {episode+1}: N = {n}")               
                 if self.no_distr:
                     logger.debug(f"Last Batch TD Errors: {td_errors.mean()}")
 

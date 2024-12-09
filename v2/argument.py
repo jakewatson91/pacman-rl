@@ -45,6 +45,7 @@ def add_arguments(parser):
 
     #risk scaling
     parser.add_argument("--risk_scaling", action='store_true', help='risk scaling or not')
+    parser.add_argument("--risk_scaling_on", type=bool, default=False, help='turn risk scaling on at end of episode')    
     parser.add_argument("--risk_preference", type=float, default=1.0, help='1 indicates high risk preference')
     parser.add_argument("--n_scaling", action='store_true', help='n scaling or not')
     parser.add_argument("--max_n", type=int, default=10, help='limit n in n scaling')
