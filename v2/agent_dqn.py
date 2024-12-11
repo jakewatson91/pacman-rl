@@ -238,10 +238,8 @@ class Agent_DQN(Agent):
         self.v_max = args.v_max
         self.v_min = args.v_min
         self.num_atoms = args.num_atoms
+        self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
         self.distr = Distributional(self.num_atoms, self.gamma, self.device)
-        self.num_atoms = args.num_atoms
-        self.v_max = args.v_max
-        self.v_min = args.v_min
 
         # Initialize model and target net
         self.q_net = DQN(args).to(self.device)
@@ -291,10 +289,10 @@ class Agent_DQN(Agent):
             qs = self.q_net(observation).to(self.device)
         
         if not self.no_distr:
-            q_mean = torch.sum(qs * self.distr.support, dim=2)  # summing reduces it to shape [actions]
+            q_mean = torch.sum(qs * self.support, dim=2)  # summing reduces it to shape [actions]
                 # print("Q shape after sum: ", qs.shape)
             if self.risk_scaling and self.risk_scaling_on:
-                q_std = torch.sqrt(torch.sum(qs * (self.distr.support ** 2), dim=2) - q_mean ** 2)
+                q_std = torch.sqrt(torch.sum(qs * (self.support ** 2), dim=2) - q_mean ** 2)
                 qs = q_mean + risk * q_std
             else:
                 qs = q_mean
@@ -365,14 +363,14 @@ class Agent_DQN(Agent):
             if self.no_double:
                 # Compute target probabilities using the target network
                 target_probabilities = self.target_net(next_states)  # [batch_size, num_actions, num_bins]
-                next_q_values = torch.sum(target_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
+                next_q_values = torch.sum(target_probabilities * self.support, dim=2)  # [batch_size, num_actions]
                 best_actions = torch.argmax(next_q_values, dim=1)  # [batch_size]
                 target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
             else: # Main network selects the best actions
                 main_probabilities = self.q_net(next_states).to(self.device)  # [batch_size, num_actions, num_bins]
                 # print("main probs shape: ", main_probabilities.shape)
                 # print("support shape: ", self.distr.support.shape)
-                main_q_values = torch.sum(main_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
+                main_q_values = torch.sum(main_probabilities * self.support, dim=2)  # [batch_size, num_actions]
                 best_actions = torch.argmax(main_q_values, dim=1)  # [batch_size]
 
                 # Target network evaluates the selected actions
@@ -437,9 +435,10 @@ class Agent_DQN(Agent):
                 transition = self.push(state, action, reward, next_state, done, n)
                 # print("n-step size: ", len(self.n_step.buffer))
                 #increase v_max if return is greater
-                if not self.no_distr and transition and transition[2] > self.v_max:
-                    self.v_max += 5
-
+                # if not self.no_distr and transition and transition[2] > self.v_max:
+                #     self.v_max += 100
+                #     self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
+                
                 total_reward += reward
                 
                 #testing scaling n and risk as episode gets longer
@@ -450,7 +449,7 @@ class Agent_DQN(Agent):
                         self.risk_scaling_on = True
                         risk += 0.25
                         risk = min(risk, 1.0)
-                    reward_threshold += 5
+                    reward_threshold += 500
 
                 self.steps += 1
                 steps += 1

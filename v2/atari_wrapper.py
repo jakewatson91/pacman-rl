@@ -145,6 +145,7 @@ class ClipRewardEnv(gym.RewardWrapper):
         if 100 >= reward >= 50:
             return 5
         return min(reward, 1) 
+        # return reward
 
 @PublicAPI
 class FireResetEnv(gym.Wrapper):

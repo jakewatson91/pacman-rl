@@ -40,8 +40,8 @@ def add_arguments(parser):
 
     #distributional q-learning hyperparameters
     parser.add_argument("--num_atoms", type=int, default=51)
-    parser.add_argument("--v_min", type=float, default=0.0)
-    parser.add_argument("--v_max", type=float, default=10)
+    parser.add_argument("--v_min", type=float, default=-10)
+    parser.add_argument("--v_max", type=float, default=100)
 
     #risk scaling
     parser.add_argument("--risk_scaling", action='store_true', help='risk scaling or not')
