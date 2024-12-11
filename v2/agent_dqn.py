@@ -114,17 +114,16 @@ class ReplayBuffer:
             # print(f"KL Divergence Errors Range: min={errors.min()}, max={errors.max()}") ## min should not be too close to 0 ie. 10e-5+
 
         self.priorities[indices] = (np.abs(errors) + 1e-5) ** self.alpha
-        self.max_priority = max(self.max_priority, self.priorities[indices].max())
+        self.max_priority = self.priorities.max()
         # print("Prios: ", self.priorities[:100])
 
 class NStep():
-    def __init__(self, n, gamma):
-        self.n = n
+    def __init__(self, gamma):
         self.gamma = gamma
-        self.buffer = deque(maxlen=self.n)
+        self.buffer = deque()
 
-    def compute_return(self, done):
-        if len(self.buffer) < self.n and not done:
+    def compute_return(self, done, n):
+        if len(self.buffer) < n and not done:
             return None
         R = 0
         for i, (_, _, reward, _, _) in enumerate(self.buffer):
@@ -134,16 +133,17 @@ class NStep():
         return s, a, R, ns, d 
 
 class Distributional():
-    def __init__(self, args, gamma, device):
+    def __init__(self, num_atoms, gamma, device):
         self.device = device
         self.gamma = gamma
-        self.num_atoms = args.num_atoms
-        self.v_min = args.v_min
-        self.v_max = args.v_max
+        self.num_atoms = num_atoms
+
+    def project_distribution(self, v_min, v_max, reward, next_probabilities, done):
+        self.v_min = v_min 
+        self.v_max = v_max
         self.delta_z = (self.v_max - self.v_min) / (self.num_atoms - 1)
         self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
-
-    def project_distribution(self, reward, next_probabilities, done):
+        
         batch_size = reward.size(0)
         
         # Compute tz without loops
@@ -206,6 +206,11 @@ class Agent_DQN(Agent):
         self.rewards = []
         self.losses = []
 
+        # for saving graphs and csv's
+        position = self.model_name.find(".")
+        self.model_dir_name = self.model_name[:position]
+        os.makedirs(self.data_dir + self.model_dir_name, exist_ok=True)
+
         # Initialize buffer
         self.max_buffer_size = args.max_buffer_size
         self.buffer_start = args.buffer_start
@@ -225,27 +230,38 @@ class Agent_DQN(Agent):
 
         #N-Step buffer
         self.no_nstep = args.no_nstep
-        self.n = args.n_step
-        self.n_step = NStep(self.n, self.gamma)
+        self.n = args.n
+        self.n_step = NStep(self.gamma)
 
         #distributional
         self.no_distr = args.no_distr
-        self.distr = Distributional(args, self.gamma, device=self.device)
-        self.num_atoms = args.num_atoms
         self.v_max = args.v_max
         self.v_min = args.v_min
+        self.num_atoms = args.num_atoms
+        self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
+        self.distr = Distributional(self.num_atoms, self.gamma, self.device)
 
         # Initialize model and target net
         self.q_net = DQN(args).to(self.device)
         self.target_net = DQN(args).to(self.device)
         self.target_net.load_state_dict(self.q_net.state_dict())
-        self.optimizer = optim.AdamW(self.q_net.parameters(), lr=self.learning_rate)
+        self.optimizer = optim.AdamW(self.q_net.parameters(), lr=self.learning_rate, eps=1e-4)
 
         #reward shaping
         self.life_penalty = args.life_penalty
 
+        #risk scaling
+        self.risk_scaling = args.risk_scaling
+        self.risk_scaling_on = args.risk_scaling_on
+        self.risk_preference = args.risk_preference
+        self.n_scaling = args.n_scaling
+        self.max_n = args.max_n
+
         #scalar loss
         self.loss_fn = torch.nn.HuberLoss()
+
+        #fill buffer before training or not
+        self.no_fill = args.no_fill
         
         if args.test_dqn or args.train_dqn_again:
             print('Loading trained model')
@@ -264,7 +280,7 @@ class Agent_DQN(Agent):
         """
         pass
 
-    def make_action(self, state, num_actions=5, test=True):
+    def make_action(self, state, num_actions=5, risk=0, test=True):
         """
         Return predicted action of your agent.
         """
@@ -273,9 +289,13 @@ class Agent_DQN(Agent):
             qs = self.q_net(observation).to(self.device)
         
         if not self.no_distr:
-            qs = torch.sum(qs * self.distr.support, dim=2)  # summing reduces it to shape [actions]
+            q_mean = torch.sum(qs * self.support, dim=2)  # summing reduces it to shape [actions]
                 # print("Q shape after sum: ", qs.shape)
-        
+            if self.risk_scaling and self.risk_scaling_on:
+                q_std = torch.sqrt(torch.sum(qs * (self.support ** 2), dim=2) - q_mean ** 2)
+                qs = q_mean + risk * q_std
+            else:
+                qs = q_mean
         if not test and random.random() < self.epsilon:
             action = random.randint(0, num_actions - 1)
             # print("action space: ", self.env.action_space.sample())
@@ -286,16 +306,19 @@ class Agent_DQN(Agent):
 
         return action
 
-    def push(self, state, action, reward, next_state, done):
+    def push(self, state, action, reward, next_state, done, n):
         """Push new data to buffer."""
         transition = state, action, reward, next_state, done
         if not self.no_nstep:
             self.n_step.buffer.append(transition)
-            processed_transition = self.n_step.compute_return(done) #return for oldest transition in buffer
+            processed_transition = self.n_step.compute_return(done, n) #return for oldest transition in buffer
             if processed_transition: #if n-step buffer is filled
-                self.buffer.add(transition)
+                # print("processed transition reward: ", processed_transition[2])
+                self.buffer.add(processed_transition)
+                return processed_transition
         else:
             self.buffer.add(transition)
+            return transition
     
     def fill_buffer(self, num_actions=5):
         state = self.env.reset()
@@ -303,7 +326,7 @@ class Agent_DQN(Agent):
         while self.buffer.size < self.buffer_start:
             action = np.random.randint(0, num_actions-1)
             next_state, reward, done, _, _ = self.env.step(action)
-            self.push(state, action, reward, next_state, done)
+            self.push(state, action, reward, next_state, done, self.n)
             state = next_state
             pbar.update(1)
             if done:
@@ -340,14 +363,14 @@ class Agent_DQN(Agent):
             if self.no_double:
                 # Compute target probabilities using the target network
                 target_probabilities = self.target_net(next_states)  # [batch_size, num_actions, num_bins]
-                next_q_values = torch.sum(target_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
+                next_q_values = torch.sum(target_probabilities * self.support, dim=2)  # [batch_size, num_actions]
                 best_actions = torch.argmax(next_q_values, dim=1)  # [batch_size]
                 target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
             else: # Main network selects the best actions
                 main_probabilities = self.q_net(next_states).to(self.device)  # [batch_size, num_actions, num_bins]
                 # print("main probs shape: ", main_probabilities.shape)
                 # print("support shape: ", self.distr.support.shape)
-                main_q_values = torch.sum(main_probabilities * self.distr.support, dim=2)  # [batch_size, num_actions]
+                main_q_values = torch.sum(main_probabilities * self.support, dim=2)  # [batch_size, num_actions]
                 best_actions = torch.argmax(main_q_values, dim=1)  # [batch_size]
 
                 # Target network evaluates the selected actions
@@ -355,7 +378,7 @@ class Agent_DQN(Agent):
                 target_probabilities = target_probabilities[batch_indices, best_actions]  # [batch_size, num_bins]
 
             # Project target distribution
-            target_distribution = self.distr.project_distribution(rewards, target_probabilities, dones)
+            target_distribution = self.distr.project_distribution(self.v_min, self.v_max, rewards, target_probabilities, dones)
             target_distribution = torch.clamp(target_distribution, min=1e-9)
             target_distribution = target_distribution / target_distribution.sum(dim=1, keepdim=True) #normalize
             loss = F.kl_div(log_probabilities, target_distribution, reduction='batchmean')
@@ -383,8 +406,11 @@ class Agent_DQN(Agent):
         losses = []
         avg_losses = []
         epsilons = [self.epsilon]
+        ns = []
+        risks = []
 
-        self.fill_buffer()
+        if not self.no_fill:
+            self.fill_buffer()
 
         for episode in tqdm(range(self.episodes)):
             state = self.env.reset()
@@ -395,15 +421,36 @@ class Agent_DQN(Agent):
             steps = 0
             prev_lives = 3 #for reward shaping
 
+            #testing scaling n as episode gets longer
+            reward_threshold = 50
+            n = self.n
+            risk = 0
+
             while not done:
-                action = self.make_action(state, test=False)
+                action = self.make_action(state, num_actions=5, risk=risk, test=False)
                 next_state, reward, done, truncated, info = self.env.step(action)
                 if info["lives"] < prev_lives:
                     reward -= self.life_penalty
                     prev_lives -= 1
-                self.push(state, action, reward, next_state, done)
-
+                transition = self.push(state, action, reward, next_state, done, n)
+                # print("n-step size: ", len(self.n_step.buffer))
+                #increase v_max if return is greater
+                # if not self.no_distr and transition and transition[2] > self.v_max:
+                #     self.v_max += 100
+                #     self.support = torch.linspace(self.v_min, self.v_max, self.num_atoms, device=self.device)
+                
                 total_reward += reward
+                
+                #testing scaling n and risk as episode gets longer
+                if total_reward >= reward_threshold:
+                    if self.n_scaling and self.n < self.max_n: 
+                        n += 1
+                    if self.risk_scaling:
+                        self.risk_scaling_on = True
+                        risk += 0.25
+                        risk = min(risk, 1.0)
+                    reward_threshold += 500
+
                 self.steps += 1
                 steps += 1
 
@@ -420,7 +467,7 @@ class Agent_DQN(Agent):
                 state = next_state
             
             while len(self.n_step.buffer) > 0: #handling remaining transitions in n-step buffer after done
-                transition = self.n_step.compute_return(done)
+                transition = self.n_step.compute_return(done, n)
                 if transition:
                     self.buffer.add(transition)
 
@@ -429,15 +476,22 @@ class Agent_DQN(Agent):
             losses.append(episode_loss)
             avg_losses.append(np.mean(losses[-30:]))
             epsilons.append(self.epsilon)
+            ns.append(n)
+            risks.append(risk)
 
             # Logging and saving
             if episode and episode % self.write_freq == 0:
                 self.makePlots(all_rewards, avg_rewards, losses, epsilons)
-                logger.info(f"Episode {episode+1}: Loss = {episode_loss}")
+                logger.info(f"Episode {episode+1}: Loss this episode = {episode_loss}")
                 logger.info(f"Episode {episode+1}: Avg Loss: {avg_losses[-1]}")
                 logger.info(f"Episode {episode+1}: Avg Rewards = {avg_rewards[-1]}")
                 logger.info(f"Episode {episode+1}: Epsilon = {self.epsilon}")
                 logger.info(f"Episode {episode+1}: Steps this episode = {steps}")
+                logger.info(f"Episode {episode+1}: V-max = {self.v_max}")               
+                if self.n_scaling:
+                    logger.info(f"Episode {episode+1}: Avg N = {np.mean(ns[-30:])}")    
+                if self.risk_scaling:
+                    logger.info(f"Episode {episode+1}: Avg Risk = {np.mean(risks[-30:])}")                          
                 if self.no_distr:
                     logger.debug(f"Last Batch TD Errors: {td_errors.mean()}")
 
@@ -456,7 +510,7 @@ class Agent_DQN(Agent):
         plt.title('Avg Rewards')
         plt.xlabel('Episodes')
         plt.ylabel('Avg Rewards')
-        plt.savefig(self.data_dir + 'avg_rewards.png')
+        plt.savefig(self.data_dir + self.model_dir_name + '/avg_rewards.png')
         # wandb.log({"Avg Rewards Plot": wandb.Image(self.data_dir + 'avg_rewards.png')})
         plt.clf()
 
@@ -466,7 +520,7 @@ class Agent_DQN(Agent):
         plt.title('Rewards')
         plt.xlabel('Episodes')
         plt.ylabel('Rewards')
-        plt.savefig(self.data_dir + 'rewards.png')
+        plt.savefig(self.data_dir + self.model_dir_name + '/rewards.png')
         # wandb.log({"Rewards Plot": wandb.Image(self.data_dir + 'rewards.png')})
         plt.clf()
 
@@ -475,7 +529,7 @@ class Agent_DQN(Agent):
         plt.title('Loss')
         plt.xlabel('Episodes')
         plt.ylabel('Loss')
-        plt.savefig(self.data_dir + 'loss.png')
+        plt.savefig(self.data_dir + self.model_dir_name + '/loss.png')
         # wandb.log({"Loss Plot": wandb.Image(self.data_dir + 'loss.png')})
         plt.clf()
 
@@ -492,10 +546,10 @@ class Agent_DQN(Agent):
             })
 
         # Write to file
-        np.savetxt(self.data_dir + '/rewards.csv', all_rewards, delimiter=',', fmt='%d')
-        np.savetxt(self.data_dir + '/avg_rewards.csv', avg_rewards, delimiter=',')
-        np.savetxt(self.data_dir + '/loss.csv', losses, delimiter=',')
-        np.savetxt(self.data_dir + '/epsilon.csv', epsilons, delimiter=',')
+        np.savetxt(self.data_dir + self.model_dir_name + '/rewards.csv', all_rewards, delimiter=',', fmt='%d')
+        np.savetxt(self.data_dir + self.model_dir_name + '/avg_rewards.csv', avg_rewards, delimiter=',')
+        np.savetxt(self.data_dir + self.model_dir_name +'/loss.csv', losses, delimiter=',')
+        np.savetxt(self.data_dir + self.model_dir_name + '/epsilon.csv', epsilons, delimiter=',')
 
     def update_epsilon(self):
         self.epsilon -= (self.epsilon_max - self.epsilon_min) / self.epsilon_decay_steps

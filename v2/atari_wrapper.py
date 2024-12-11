@@ -142,7 +142,10 @@ class ClipRewardEnv(gym.RewardWrapper):
     def reward(self, reward):
         """Bin reward to {+1, 0, -1} by its sign."""
         # return np.log(1 + reward) # clipping rewards while retaining magnitude
-        return min(reward, 10)
+        if 100 >= reward >= 50:
+            return 5
+        return min(reward, 1) 
+        # return reward
 
 @PublicAPI
 class FireResetEnv(gym.Wrapper):
