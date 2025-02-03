@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bash#
 #SBATCH -A cs525
 #SBATCH -p academic 
 #SBATCH -N 1 
