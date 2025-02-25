@@ -16,20 +16,20 @@ This project builds upon fundamental advancements in deep reinforcement learning
 - **WandB Integration**: Logs training metrics for visualization.
 
 ## Installation
-```bash
-pip install -r requirements.txt```
+bash
+pip install -r requirements.txt
 
-Training
+## Training
 
 To train the agent, run:
 
-```python train.py```
+python train.py
 
-Evaluation
+## Evaluation
 
 To test a trained model:
 
-```python test.py --model_path saved_model.pth```
+python test.py --model_path saved_model.pth
 
 ## Results
 	•	Training curves are logged in WandB.
