@@ -1,5 +1,7 @@
 # Deep Reinforcement Learning Pac-Man Agent (Rainbow DQN)
 
+!(test_vid.gif)
+
 ## Overview
 This project builds upon fundamental advancements in deep reinforcement learning to train AI agent to play **Pac-Man**. The model was trained on a **GPU** for **50,000 epochs**, and was built using the Rainbow architecture. In addition to the standard architecture, it incorporates:
 - **Reward shaping**
