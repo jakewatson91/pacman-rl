@@ -17,32 +17,32 @@ This project builds upon fundamental advancements in deep reinforcement learning
 
 ## Installation
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt```
 
 Training
 
 To train the agent, run:
 
-python train.py
+```python train.py```
 
 Evaluation
 
 To test a trained model:
 
-python test.py --model_path saved_model.pth
+```python test.py --model_path saved_model.pth```
 
-Results
+## Results
 	•	Training curves are logged in WandB.
 	•	Plots of rewards and losses are saved in the output directory.
 	•	Reward shaping and risk scaling were tested to mitigate sparse rewards in later levels.
 
-Files
+## Files
 	•	agent.py – Implements the Rainbow DQN agent.
 	•	dqn_model.py – Defines the neural network architecture.
 	•	train.py – Main script for training the agent.
 	•	test.py – Script to evaluate the trained model.
 
-References
+## References
 	1.	Mnih, V., et al. (2013). Playing Atari with Deep Reinforcement Learning. arXiv:1312.5602
 	2.	Van Hasselt, H., Guez, A., & Silver, D. (2015). Deep reinforcement learning with double Q-learning. arXiv:1509.06461
 	3.	Wang, Z., et al. (2015). Dueling Network Architectures for Deep Reinforcement Learning. arXiv:1509.06461
