@@ -1,23 +1,22 @@
-Deep Reinforcement Learning Pac-Man Agent (Rainbow DQN)
+# Deep Reinforcement Learning Pac-Man Agent (Rainbow DQN)
 
-Overview
+## Overview
+This project builds upon fundamental advancements in deep reinforcement learning to train AI agent to play **Pac-Man**. The model was trained on a **GPU** for **50,000 epochs**, and was built using the Rainbow architecture. In addition to the standard architecture, it incorporates:
+- **Reward shaping**
+- **N-step returns**
 
-This project trains an AI agent to play Pac-Man using Deep Reinforcement Learning with the Rainbow DQN architecture. The model was trained on a GPU for 50,000 epochs, incorporating prioritized experience replay, n-step returns, and distributional Q-learning.
+## Features
+- **Rainbow DQN**: Integrates multiple DQN advancements for improved training efficiency.
+- **GPU Training**: Utilizes CUDA for accelerated learning.
+- **Experience Replay**: Implements **prioritized experience replay** for efficient sample selection.
+- **N-Step Learning**: Uses **multi-step return bootstrapping** to improve learning stability.
+- **Distributional Q-Learning**: Models uncertainty in value estimation.
+- **Reward Shaping**: Tested **log-based rewards** to encourage exploration.
+- **Risk Scaling**: Adjusted risk dynamically to enhance decision-making in sparse reward situations.
+- **WandB Integration**: Logs training metrics for visualization.
 
-Additionally, reward shaping (log rewards) and risk scaling were experimented with to address the sparse reward bottleneck in later levels.
-
-Features
-	•	Rainbow DQN: Integrates multiple DQN advancements for improved training efficiency.
-	•	GPU Training: Utilizes CUDA for accelerated learning.
-	•	Experience Replay: Implements prioritized experience replay for efficient sample selection.
-	•	N-Step Learning: Uses multi-step return bootstrapping to improve learning stability.
-	•	Distributional Q-Learning: Models uncertainty in value estimation.
-	•	Reward Shaping: Tested log-based rewards to encourage exploration.
-	•	Risk Scaling: Adjusted risk dynamically to enhance decision-making in sparse reward situations.
-	•	WandB Integration: Logs training metrics for visualization.
-
-Installation
-
+## Installation
+```bash
 pip install -r requirements.txt
 
 Training
@@ -57,5 +56,3 @@ References
 	11.	Wikipedia contributors. Kullback–Leibler divergence. Wikipedia
 	12.	Wikipedia contributors. Wasserstein metric. Wikipedia
 	13.	Wijaya, S., et al. (2023). LSTM Model-Based Reinforcement Learning for Nonlinear Mass Spring Damper System Control. DOI:10.1016/j.procs.2022.12.129
-
-This project builds upon fundamental advancements in deep reinforcement learning, incorporating techniques from DQN, Double DQN, Dueling DQN, and Distributional RL to create a robust Pac-Man playing agent. 🚀
